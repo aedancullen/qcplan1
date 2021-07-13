@@ -18,6 +18,14 @@ BIASMAP_XY_SUBDIV = 1000/50
 BIASMAP_YAW_SUBDIV = 10
 BIASMAP_CONTROL_STDEV = [1.0, 1.0]
 
+class CourseProgressGoal(ob.GoalState):
+    def __init__(self, si):
+        super().__init__(si)
+        self.si = si
+        
+    def distanceGoal(state):
+        pass
+
 class TimestepOptimizationObjective(ob.OptimizationObjective):
     def __init__(self, si):
         super().__init__(si)
@@ -109,6 +117,8 @@ def plan():
 
     # set the start and goal states
     ss.setStartAndGoalStates(start, goal, 0.05)
+    
+    print(ss.getGoal())
 
     # (optionally) set planner
     si = ss.getSpaceInformation()
