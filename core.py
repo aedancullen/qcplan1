@@ -14,7 +14,7 @@ NUM_CONTROLS = 2
 CONTROL_LOWER = [0.0, 0.0]
 CONTROL_UPPER = [1.0, 1.0]
 
-BIASMAP_XY_SUBDIV = 1000/50
+BIASMAP_XY_SUBDIV = 1000/100
 BIASMAP_YAW_SUBDIV = 10
 BIASMAP_CONTROL_STDEV = [1.0, 1.0]
 
@@ -73,7 +73,7 @@ def state_validity_check(spaceInformation, state):
 def state_propagate(start, control, duration, state):
     state.setX(start.getX() + control[0] * duration * cos(start.getYaw()))
     state.setY(start.getY() + control[0] * duration * sin(start.getYaw()))
-    state.setYaw(start.getYaw() + control[1] * duration)
+    #state.setYaw(start.getYaw() + control[1] * duration)
     
 def csampler_alloc(controlSpace):
     return oc.RealVectorControlUniformSampler(controlSpace)
@@ -136,11 +136,7 @@ def plan():
     ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(si))
     
     # attempt to solve the problem
-    solved = ss.solve(20.100)
-    
-    ss.clear()
-    
-    solved = ss.solve(20.100)
+    solved = ss.solve(0.100)
 
     if solved:
         # print the path to screen
