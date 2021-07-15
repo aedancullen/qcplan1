@@ -9,5 +9,5 @@ if "LD_LIBRARY_PATH" in env:
 else:
     base = ""
 env["LD_LIBRARY_PATH"] = base + ":" + filepath + "/ompl/"
-p = subprocess.Popen(["python3", filepath + "/qcplan1_core.py"], env=env)
+p = subprocess.Popen(["python3", filepath + "/core.py"], env=env)
 p.communicate()

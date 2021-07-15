@@ -113,12 +113,10 @@ def plan():
     goal = ob.State(space)
     goal().setX(0.0)
     goal().setY(0.5)
-    goal().setYaw(-4)
+    goal().setYaw(0.0)
 
     # set the start and goal states
-    ss.setStartAndGoalStates(start, goal, 0.05)
-    
-    print(ss.getGoal())
+    ss.setStartAndGoalStates(start, goal, 0.1)
 
     # (optionally) set planner
     si = ss.getSpaceInformation()
@@ -137,7 +135,6 @@ def plan():
     ss.getControlSpace().setControlSamplerAllocator(oc.ControlSamplerAllocator(csampler_alloc))
     ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(si))
     
-    print("Begin solve")
     # attempt to solve the problem
     solved = ss.solve(20.100)
     
