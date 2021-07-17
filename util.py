@@ -1,5 +1,4 @@
 import math
-from collections import deque
 
 import numpy as np
 from numba import njit

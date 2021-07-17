@@ -27,18 +27,16 @@ class CourseProgressGoal(ob.GoalState):
         start_point = np.array([start_state.getX(), start_state.getY()]), dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
         goal_point, t, i = util.walk_along_trajectory(trajectory, t, i, progress_dist)
-        self.goal = ob.State(si)
-        self.goal().setX(goal_point[0])
-        self.goal().setY(goal_point[1])
-        self.setState(self.goal)
+        self.goal_point = goal_point
+        goal = ob.State(si)
+        goal().setX(goal_point[0])
+        goal().setY(goal_point[1])
+        self.setState(goal)
         
     def distanceGoal(start_state):
         start_point = np.array([start_state.getX(), start_state.getY()]), dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
-        cur = ob.State(self.si)
-        cur().setX(nearest_point[0])
-        cur().setY(nearest_point[1])
-        return self.si.distance(cur, self.goal)
+        return np.linalg.norm(self.goal_point, nearest_point)
 
 class TimestepOptimizationObjective(ob.OptimizationObjective):
     def __init__(self, si):
