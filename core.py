@@ -1,6 +1,5 @@
-
 import time
-from math import pi, sin, cos
+import math
 from functools import partial
 
 import numpy as np
@@ -8,23 +7,38 @@ from ompl import util as ou
 from ompl import base as ob
 from ompl import control as oc
 
+import util
+
 #ou.setLogLevel(ou.LOG_WARN)
 
 NUM_CONTROLS = 2
 CONTROL_LOWER = [0.0, 0.0]
 CONTROL_UPPER = [1.0, 1.0]
 
-BIASMAP_XY_SUBDIV = 1000/100
+BIASMAP_XY_SUBDIV = 10
 BIASMAP_YAW_SUBDIV = 10
 BIASMAP_CONTROL_STDEV = [1.0, 1.0]
 
 class CourseProgressGoal(ob.GoalState):
-    def __init__(self, si):
+    def __init__(self, si, waypoints, start_state, progress_dist):
         super().__init__(si)
         self.si = si
+        self.waypoints = waypoints
+        start_point = np.array([start_state.getX(), start_state.getY()]), dtype=np.float32)
+        nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
+        goal_point, t, i = util.walk_along_trajectory(trajectory, t, i, progress_dist)
+        self.goal = ob.State(si)
+        self.goal().setX(goal_point[0])
+        self.goal().setY(goal_point[1])
+        self.setState(self.goal)
         
-    def distanceGoal(state):
-        pass
+    def distanceGoal(start_state):
+        start_point = np.array([start_state.getX(), start_state.getY()]), dtype=np.float32)
+        nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
+        cur = ob.State(self.si)
+        cur().setX(nearest_point[0])
+        cur().setY(nearest_point[1])
+        return self.si.distance(cur, self.goal)
 
 class TimestepOptimizationObjective(ob.OptimizationObjective):
     def __init__(self, si):
@@ -42,8 +56,8 @@ class BiasmapControlSampler(oc.ControlSampler):
         self.biasmap_valid = biasmap_valid
         self.exact_flags = np.ones_like(biasmap, dtype=bool)
         
-    def sample(self, control, state):
-        bi_x, bi_y, bi_yaw = se2_to_biasmap_indices(state)
+    def sample(self, control, start_state):
+        bi_x, bi_y, bi_yaw = se2_to_biasmap_indices(start_state)
         result_data = self.biasmap[bi_x, bi_y, bi_yaw, :]
         result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
         result_exact = self.exact_flags[bi_x, bi_y, bi_yaw, :]
@@ -64,7 +78,7 @@ class BiasmapControlSampler(oc.ControlSampler):
 def se2_to_biasmap_indices(state):
     bi_x = round(state.getX() * BIASMAP_XY_SUBDIV)
     bi_y = round(state.getY() * BIASMAP_XY_SUBDIV)
-    bi_yaw = round((state.getYaw() + pi) * BIASMAP_YAW_SUBDIV / (2 * pi))
+    bi_yaw = round((state.getYaw() + math.pi) * BIASMAP_YAW_SUBDIV / (2 * math.pi))
     return bi_x, bi_y, bi_yaw
 
 def state_validity_check(spaceInformation, state):
