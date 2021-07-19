@@ -11,6 +11,8 @@ import util
 
 #ou.setLogLevel(ou.LOG_WARN)
 
+PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
+
 NUM_CONTROLS = 2
 CONTROL_LOWER = [0.0, 0.0]
 CONTROL_UPPER = [1.0, 1.0]
@@ -26,7 +28,7 @@ class CourseProgressGoal(ob.GoalState):
         self.waypoints = waypoints
         start_point = np.array([start_state.getX(), start_state.getY()]), dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
-        goal_point, t, i = util.walk_along_trajectory(trajectory, t, i, progress_dist)
+        goal_point, t, i = util.walk_along_trajectory(waypoints, t, i, progress_dist)
         self.goal_point = goal_point
         goal = ob.State(si)
         goal().setX(goal_point[0])
