@@ -57,7 +57,9 @@ class BiasmapControlSampler(oc.ControlSampler):
         self.exact_flags = np.ones_like(biasmap, dtype=bool)
         
     def sample(self, control, start_state):
-        bi_x, bi_y, bi_yaw = se2_to_biasmap_indices(start_state)
+        bi_x = round(start_state.getX() * BIASMAP_XY_SUBDIV)
+        bi_y = round(start_state.getY() * BIASMAP_XY_SUBDIV)
+        bi_yaw = round((start_state.getYaw() + math.pi) * BIASMAP_YAW_SUBDIV / (2 * math.pi))
         result_data = self.biasmap[bi_x, bi_y, bi_yaw, :]
         result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
         result_exact = self.exact_flags[bi_x, bi_y, bi_yaw, :]
@@ -74,12 +76,6 @@ class BiasmapControlSampler(oc.ControlSampler):
         else:
             for i in range(NUM_CONTROLS):
                 control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
-                
-def se2_to_biasmap_indices(state):
-    bi_x = round(state.getX() * BIASMAP_XY_SUBDIV)
-    bi_y = round(state.getY() * BIASMAP_XY_SUBDIV)
-    bi_yaw = round((state.getYaw() + math.pi) * BIASMAP_YAW_SUBDIV / (2 * math.pi))
-    return bi_x, bi_y, bi_yaw
 
 def state_validity_check(spaceInformation, state):
     return spaceInformation.satisfiesBounds(state)
