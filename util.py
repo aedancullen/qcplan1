@@ -244,10 +244,3 @@ def pid(speed, steer, current_speed, current_steer, max_sv, max_a, max_v, min_v)
             accl = kp * vel_diff
 
     return accl, sv
-
-waypoints = np.loadtxt("waypoints.csv", delimiter=',', dtype=np.float32)
-print(waypoints.shape)
-point = np.array([0, 0.51], dtype=np.float32)
-nearest_point, nearest_dist, t, i = nearest_point_on_trajectory(point, waypoints)
-print(t, i)
-print(walk_along_trajectory(waypoints, 0.5, 0, 1))
