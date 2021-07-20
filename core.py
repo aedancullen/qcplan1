@@ -54,25 +54,18 @@ class BiasmapControlSampler(oc.ControlSampler):
         self.control_space = control_space
         self.biasmap = biasmap
         self.biasmap_valid = biasmap_valid
-        self.exact_flags = np.ones_like(biasmap, dtype=bool)
         
     def sample(self, control, start_state):
         bi_x = round(start_state.getX() * BIASMAP_XY_SUBDIV)
         bi_y = round(start_state.getY() * BIASMAP_XY_SUBDIV)
         bi_yaw = round((start_state.getYaw() + math.pi) * BIASMAP_YAW_SUBDIV / (2 * math.pi))
-        result_data = self.biasmap[bi_x, bi_y, bi_yaw, :]
+        result_data = self.biasmap[bi_x, bi_y, bi_yaw, :, :]
         result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
-        result_exact = self.exact_flags[bi_x, bi_y, bi_yaw, :]
         if result_valid:
-            if result_exact[0]:
-                result_exact[0] = False
-                for i in range(NUM_CONTROLS):
-                    control[i] = np.clip(result_data[i], CONTROL_LOWER[i], CONTROL_UPPER[i])
-            else:
-                for i in range(NUM_CONTROLS):
-                    cvalue = np.random.normal(result_data[i], BIASMAP_CONTROL_STDEV[i])
-                    cvalue = np.clip(cvalue, CONTROL_LOWER[i], CONTROL_UPPER[i])
-                    control[i] = cvalue
+            for i in range(NUM_CONTROLS):
+                cvalue = np.random.normal(result_data[i, 0], result_data[i, 1])
+                cvalue = np.clip(cvalue, CONTROL_LOWER[i], CONTROL_UPPER[i])
+                control[i] = cvalue
         else:
             for i in range(NUM_CONTROLS):
                 control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
