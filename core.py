@@ -1,6 +1,5 @@
 import time
 import math
-from functools import partial
 
 import numpy as np
 from ompl import util as ou
@@ -21,22 +20,25 @@ BIASMAP_XY_SUBDIV = 10
 BIASMAP_YAW_SUBDIV = 10
 BIASMAP_CONTROL_STDEV = [1.0, 1.0]
 
+CHUNK_DURATION = 0.100
+CHUNK_DISTANCE = 10
+
 class CourseProgressGoal(ob.GoalState):
     def __init__(self, si, waypoints, start_state, progress_dist):
         super().__init__(si)
         self.si = si
         self.waypoints = waypoints
-        start_point = np.array([start_state.getX(), start_state.getY()]), dtype=np.float32)
+        start_point = np.array([start_state[0].getX(), start_state[0].getY()]), dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
         goal_point, t, i = util.walk_along_trajectory(waypoints, t, i, progress_dist)
         self.goal_point = goal_point
-        goal = ob.State(si)
-        goal().setX(goal_point[0])
-        goal().setY(goal_point[1])
+        goal = ob.State(si)()
+        goal[0].setX(goal_point[0])
+        goal[0].setY(goal_point[1])
         self.setState(goal)
         
     def distanceGoal(start_state):
-        start_point = np.array([start_state.getX(), start_state.getY()]), dtype=np.float32)
+        start_point = np.array([start_state[0].getX(), start_state[0].getY()]), dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
         return np.linalg.norm(self.goal_point, nearest_point)
 
@@ -56,9 +58,9 @@ class BiasmapControlSampler(oc.ControlSampler):
         self.biasmap_valid = biasmap_valid
         
     def sample(self, control, start_state):
-        bi_x = round(start_state.getX() * BIASMAP_XY_SUBDIV)
-        bi_y = round(start_state.getY() * BIASMAP_XY_SUBDIV)
-        bi_yaw = round((start_state.getYaw() + math.pi) * BIASMAP_YAW_SUBDIV / (2 * math.pi))
+        bi_x = round(start_state[0].getX() * BIASMAP_XY_SUBDIV)
+        bi_y = round(start_state[0].getY() * BIASMAP_XY_SUBDIV)
+        bi_yaw = round((start_state[0].getYaw() + math.pi) * BIASMAP_YAW_SUBDIV / (2 * math.pi))
         result_data = self.biasmap[bi_x, bi_y, bi_yaw, :, :]
         result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
         if result_valid:
@@ -70,16 +72,20 @@ class BiasmapControlSampler(oc.ControlSampler):
             for i in range(NUM_CONTROLS):
                 control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
 
-def state_validity_check(spaceInformation, state):
-    return spaceInformation.satisfiesBounds(state)
-
-def state_propagate(start, control, duration, state):
-    state.setX(start.getX() + control[0] * duration * cos(start.getYaw()))
-    state.setY(start.getY() + control[0] * duration * sin(start.getYaw()))
-    #state.setYaw(start.getYaw() + control[1] * duration)
+class QCPlan1:
+    def __init__(self, waypoints, gridmap, biasmap, biasmap_valid):
+        pass
     
-def csampler_alloc(controlSpace):
-    return oc.RealVectorControlUniformSampler(controlSpace)
+    def state_validity_check(self, state):
+        return self.si.satisfiesBounds(state)
+
+    def state_propagate(self, start, control, duration, state):
+        state[0].setX(start[0].getX() + control[0] * duration * cos(start[0].getYaw()))
+        state[0].setY(start[0].getY() + control[0] * duration * sin(start[0].getYaw()))
+        #state.setYaw(start.getYaw() + control[1] * duration)
+        
+    def csampler_alloc(self, control_space):
+        return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
 
 def plan():
     # construct the state space we are planning in
