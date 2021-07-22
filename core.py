@@ -48,7 +48,7 @@ class TimestepOptimizationObjective(ob.OptimizationObjective):
         self.si = si
         
     def motionCost(self, s1, s2):
-        return 1 + self.si.distance(s1, s2)
+        return 1# + self.si.distance(s1, s2)
     
 class BiasmapControlSampler(oc.ControlSampler):
     def __init__(self, control_space, biasmap, biasmap_valid):
