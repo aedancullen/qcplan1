@@ -73,7 +73,7 @@ class BiasmapControlSampler(oc.ControlSampler):
                 control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
 
 class QCPlan1:
-    def __init__(self, waypoints, gridmap, biasmap, biasmap_valid):
+    def __init__(self, waypoints_fn, gridmap_fn, biasmap_fn):
         pass
     
     def state_validity_check(self, state):
