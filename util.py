@@ -306,47 +306,47 @@ class RaceCar(object):
         self.ttc_thresh = 0.005
 
         # initialize scan sim
-        self.scan_simulator = ScanSimulator2D(num_beams, fov, seed=self.seed)
-        scan_ang_incr = self.scan_simulator.get_increment()
+        #self.scan_simulator = ScanSimulator2D(num_beams, fov, seed=self.seed)
+        #scan_ang_incr = self.scan_simulator.get_increment()
 
         # current scan
-        self.current_scan = np.zeros((num_beams, ))
+        #self.current_scan = np.zeros((num_beams, ))
 
         # angles of each scan beam, distance from lidar to edge of car at each beam, and precomputed cosines of each angle
-        self.cosines = np.zeros((num_beams, ))
-        self.scan_angles = np.zeros((num_beams, ))
-        self.side_distances = np.zeros((num_beams, ))
+        #self.cosines = np.zeros((num_beams, ))
+        #self.scan_angles = np.zeros((num_beams, ))
+        #self.side_distances = np.zeros((num_beams, ))
 
-        dist_sides = params['width']/2.
-        dist_fr = (params['lf']+params['lr'])/2.
+        #dist_sides = params['width']/2.
+        #dist_fr = (params['lf']+params['lr'])/2.
 
-        for i in range(num_beams):
-            angle = -fov/2. + i*scan_ang_incr
-            self.scan_angles[i] = angle
-            self.cosines[i] = np.cos(angle)
+        #for i in range(num_beams):
+        #    angle = -fov/2. + i*scan_ang_incr
+        #    self.scan_angles[i] = angle
+        #    self.cosines[i] = np.cos(angle)
 
-            if angle > 0:
-                if angle < np.pi/2:
-                    # between 0 and pi/2
-                    to_side = dist_sides / np.sin(angle)
-                    to_fr = dist_fr / np.cos(angle)
-                    self.side_distances[i] = min(to_side, to_fr)
-                else:
-                    # between pi/2 and pi
-                    to_side = dist_sides / np.cos(angle - np.pi/2.)
-                    to_fr = dist_fr / np.sin(angle - np.pi/2.)
-                    self.side_distances[i] = min(to_side, to_fr)
-            else:
-                if angle > -np.pi/2:
-                    # between 0 and -pi/2
-                    to_side = dist_sides / np.sin(-angle)
-                    to_fr = dist_fr / np.cos(-angle)
-                    self.side_distances[i] = min(to_side, to_fr)
-                else:
-                    # between -pi/2 and -pi
-                    to_side = dist_sides / np.cos(-angle - np.pi/2)
-                    to_fr = dist_fr / np.sin(-angle - np.pi/2)
-                    self.side_distances[i] = min(to_side, to_fr)
+        #    if angle > 0:
+        #        if angle < np.pi/2:
+        #            # between 0 and pi/2
+        #            to_side = dist_sides / np.sin(angle)
+        #            to_fr = dist_fr / np.cos(angle)
+        #            self.side_distances[i] = min(to_side, to_fr)
+        #        else:
+        #            # between pi/2 and pi
+        #            to_side = dist_sides / np.cos(angle - np.pi/2.)
+        #            to_fr = dist_fr / np.sin(angle - np.pi/2.)
+        #            self.side_distances[i] = min(to_side, to_fr)
+        #    else:
+        #        if angle > -np.pi/2:
+        #            # between 0 and -pi/2
+        #            to_side = dist_sides / np.sin(-angle)
+        #            to_fr = dist_fr / np.cos(-angle)
+        #            self.side_distances[i] = min(to_side, to_fr)
+        #        else:
+        #            # between -pi/2 and -pi
+        #            to_side = dist_sides / np.cos(-angle - np.pi/2)
+        #            to_fr = dist_fr / np.sin(-angle - np.pi/2)
+        #            self.side_distances[i] = min(to_side, to_fr)
 
     def update_params(self, params):
         """
@@ -392,7 +392,7 @@ class RaceCar(object):
         self.state[4] = pose[2]
         self.steer_buffer = np.empty((0, ))
         # reset scan random generator
-        self.scan_simulator.reset_rng(self.seed)
+        #self.scan_simulator.reset_rng(self.seed)
 
     def ray_cast_agents(self, scan):
         """
@@ -502,7 +502,7 @@ class RaceCar(object):
             self.state[4] = self.state[4] + 2*np.pi
 
         # update scan
-        self.current_scan = self.scan_simulator.scan(np.append(self.state[0:2], self.state[4]))
+        #self.current_scan = self.scan_simulator.scan(np.append(self.state[0:2], self.state[4]))
 
     def update_opp_poses(self, opp_poses):
         """
