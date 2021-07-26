@@ -18,19 +18,18 @@ CONTROL_UPPER = [1.0, 1.0]
 
 BIASMAP_XY_SUBDIV = 10
 BIASMAP_YAW_SUBDIV = 10
-BIASMAP_CONTROL_STDEV = [1.0, 1.0]
 
 CHUNK_DURATION = 0.100
 CHUNK_DISTANCE = 10
 
 class CourseProgressGoal(ob.GoalState):
-    def __init__(self, si, waypoints, start_state, progress_dist):
+    def __init__(self, si, waypoints, start_state):
         super().__init__(si)
         self.si = si
         self.waypoints = waypoints
         start_point = np.array([start_state[0].getX(), start_state[0].getY()]), dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
-        goal_point, t, i = util.walk_along_trajectory(waypoints, t, i, progress_dist)
+        goal_point, t, i = util.walk_along_trajectory(waypoints, t, i, CHUNK_DISTANCE)
         self.goal_point = goal_point
         goal = ob.State(si)()
         goal[0].setX(goal_point[0])
@@ -51,9 +50,9 @@ class TimestepOptimizationObjective(ob.OptimizationObjective):
         return 1# + self.si.distance(s1, s2)
     
 class BiasmapControlSampler(oc.ControlSampler):
-    def __init__(self, control_space, biasmap, biasmap_valid):
-        super().__init__(control_space)
-        self.control_space = control_space
+    def __init__(self, controlspace, biasmap, biasmap_valid):
+        super().__init__(controlspace)
+        self.controlspace = controlspace
         self.biasmap = biasmap
         self.biasmap_valid = biasmap_valid
         
@@ -74,7 +73,37 @@ class BiasmapControlSampler(oc.ControlSampler):
 
 class QCPlan1:
     def __init__(self, waypoints_fn, gridmap_fn, biasmap_fn):
-        pass
+        self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
+        self.gridmap = np.load(gridmap_fn)
+        biasmap_data = np.load(biasmap_fn)
+        self.biasmap = biasmap_data["biasmap"]
+        self.biasmap_valid = biasmap_data["biasmap_valid"]
+        
+        self.se2space = ob.SE2StateSpace()
+        self.vectorspace = ob.RealVectorStateSpace(4)
+        
+        self.statespace = ob.CompoundStateSpace()
+        self.statespace.addSubspace(self.se2space, 1)
+        self.statespace.addSubspace(self.vectorspace, 0)
+        
+        self.controlspace = oc.RealVectorControlSpace(self.statespace, 2)
+        self.controlspace.setControlSamplerAllocator(oc.ControlSamplerAllocator(self.csampler_alloc))
+        
+        self.ss = oc.SimpleSetup(self.controlspace)
+        self.ss.setStateValidityChecker(ob.StateValidityCheckerFn(self.state_validity_check))
+        self.ss.setStatePropagator(oc.StatePropagatorFn(self.state_propagate))
+        
+        self.si = self.ss.getSpaceInformation()
+        self.si.setPropagationStepSize(1)
+        self.si.setMinMaxControlDuration(1, 1)
+        
+        self.planner = oc.SST(self.si)
+        self.ss.setPlanner(self.planner)
+        
+        self.ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(self.si))
+        
+    def loop(self):
+        
     
     def state_validity_check(self, state):
         return self.si.satisfiesBounds(state)
