@@ -35,7 +35,7 @@ class CourseProgressGoal(ob.GoalState):
         goal[0].setX(goal_point[0])
         goal[0].setY(goal_point[1])
         self.setState(goal)
-        
+
     def distanceGoal(start_state):
         start_point = np.array([start_state[0].getX(), start_state[0].getY()]), dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
@@ -45,17 +45,17 @@ class TimestepOptimizationObjective(ob.OptimizationObjective):
     def __init__(self, si):
         super().__init__(si)
         self.si = si
-        
+
     def motionCost(self, s1, s2):
         return 1# + self.si.distance(s1, s2)
-    
+
 class BiasmapControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, biasmap, biasmap_valid):
         super().__init__(controlspace)
         self.controlspace = controlspace
         self.biasmap = biasmap
         self.biasmap_valid = biasmap_valid
-        
+
     def sample(self, control, start_state):
         bi_x = round(start_state[0].getX() * BIASMAP_XY_SUBDIV)
         bi_y = round(start_state[0].getY() * BIASMAP_XY_SUBDIV)
@@ -78,33 +78,36 @@ class QCPlan1:
         biasmap_data = np.load(biasmap_fn)
         self.biasmap = biasmap_data["biasmap"]
         self.biasmap_valid = biasmap_data["biasmap_valid"]
-        
+
         self.se2space = ob.SE2StateSpace()
         self.vectorspace = ob.RealVectorStateSpace(4)
-        
+
         self.statespace = ob.CompoundStateSpace()
         self.statespace.addSubspace(self.se2space, 1)
         self.statespace.addSubspace(self.vectorspace, 0)
-        
+
         self.controlspace = oc.RealVectorControlSpace(self.statespace, 2)
         self.controlspace.setControlSamplerAllocator(oc.ControlSamplerAllocator(self.csampler_alloc))
-        
+
         self.ss = oc.SimpleSetup(self.controlspace)
         self.ss.setStateValidityChecker(ob.StateValidityCheckerFn(self.state_validity_check))
         self.ss.setStatePropagator(oc.StatePropagatorFn(self.state_propagate))
-        
+
         self.si = self.ss.getSpaceInformation()
         self.si.setPropagationStepSize(1)
         self.si.setMinMaxControlDuration(1, 1)
-        
+
         self.planner = oc.SST(self.si)
         self.ss.setPlanner(self.planner)
-        
+
         self.ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(self.si))
-        
+
+
+        self.provided_car = util.RaceCar(PARAMS, 12345) # seed garbage not used; nobody cares
+
     def loop(self):
-        
-    
+
+
     def state_validity_check(self, state):
         return self.si.satisfiesBounds(state)
 
@@ -112,7 +115,7 @@ class QCPlan1:
         state[0].setX(start[0].getX() + control[0] * duration * cos(start[0].getYaw()))
         state[0].setY(start[0].getY() + control[0] * duration * sin(start[0].getYaw()))
         #state.setYaw(start.getYaw() + control[1] * duration)
-        
+
     def csampler_alloc(self, control_space):
         return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
 
@@ -169,10 +172,10 @@ def plan():
     # (optionally) set propagation step size
     si.setPropagationStepSize(1)
     si.setMinMaxControlDuration(1, 1)
-    
+
     ss.getControlSpace().setControlSamplerAllocator(oc.ControlSamplerAllocator(csampler_alloc))
     ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(si))
-    
+
     # attempt to solve the problem
     solved = ss.solve(0.100)
 
