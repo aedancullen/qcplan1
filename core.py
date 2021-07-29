@@ -53,7 +53,7 @@ class TimestepOptimizationObjective(ob.OptimizationObjective):
         self.si = si
 
     def motionCost(self, s1, s2):
-        return 1 + self.si.distance(s1, s2)
+        return 1# + self.si.distance(s1, s2)
 
 class BiasmapControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, biasmap, biasmap_valid):
@@ -64,9 +64,9 @@ class BiasmapControlSampler(oc.ControlSampler):
         self.exact_flags = np.ones_like(biasmap, dtype=bool)
 
     def sample(self, control, start_state):
-        bi_x = round(start_state[0].getX() * BIASMAP_XY_SUBDIV)
-        bi_y = round(start_state[0].getY() * BIASMAP_XY_SUBDIV)
-        bi_yaw = round((start_state[0].getYaw() + np.pi) * BIASMAP_YAW_SUBDIV / (2 * np.pi))
+        bi_x = np.round(start_state[0].getX() * BIASMAP_XY_SUBDIV)
+        bi_y = np.round(start_state[0].getY() * BIASMAP_XY_SUBDIV)
+        bi_yaw = np.round((start_state[0].getYaw() + np.pi) * BIASMAP_YAW_SUBDIV / (2 * np.pi))
         result_data = self.biasmap[bi_x, bi_y, bi_yaw, :]
         result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
         result_exact = self.exact_flags[bi_x, bi_y, bi_yaw, :]
@@ -108,7 +108,7 @@ class QCPlan1:
 
         self.si = self.ss.getSpaceInformation()
         self.si.setPropagationStepSize(1)
-        self.si.setMinMaxControlDuration(1, 1)
+        self.si.setMinMaxControlDuration(CHUNK_MULTIPLIER, CHUNK_MULTIPLIER)
 
         self.planner = oc.SST(self.si)
         self.ss.setPlanner(self.planner)
@@ -118,8 +118,6 @@ class QCPlan1:
         self.last_controls = None
         self.last_state = None
         self.last_scan = None
-
-        self.provided_car = util.RaceCar(PARAMS, 12345) # seed garbage not used; nobody cares
 
     def loop(self):
         pass
@@ -137,7 +135,6 @@ class QCPlan1:
         return self.si.satisfiesBounds(state)
 
     def state_propagate(self, start, control, duration, state):
-        assert duration == 1
         
         np_state = np.array([
             start[0].getX(),
@@ -153,9 +150,8 @@ class QCPlan1:
         steer0 = start[1][4]
         vel = control[1]
         
-        for i in range(CHUNK_MULTIPLIER):
-            print("ompl", steer, vel)
-            self.provided_car.update_pose(control[0], control[1])
+        for i in range(int(duration)):
+
             # steering angle velocity input to steering velocity acceleration input
             accl, sv = util.pid(vel, steer, np_state[3], np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
             
@@ -273,5 +269,5 @@ def plan():
 if __name__ == "__main__":
     qc = QCPlan1()
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
-    scan_sub = rospy.Subscriber("/%s/scan" % self.agent_name, LaserScan, qc.lidar_callback, queue_size=1)
+    #scan_sub = rospy.Subscriber("/%s/scan" % self.agent_name, LaserScan, qc.lidar_callback, queue_size=1)
     rospy.spin()
