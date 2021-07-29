@@ -1,9 +1,6 @@
-import time
-import math
-
-import rospy
-from sensor_msgs.msg import LaserScan
-from ackermann_msgs.msg import AckermannDriveStamped
+#import rospy
+#from sensor_msgs.msg import LaserScan
+#from ackermann_msgs.msg import AckermannDriveStamped
 
 import numpy as np
 from ompl import util as ou
@@ -36,17 +33,17 @@ class CourseProgressGoal(ob.GoalState):
         super().__init__(si)
         self.si = si
         self.waypoints = waypoints
-        start_point = np.array([start_state[0].getX(), start_state[0].getY()]), dtype=np.float32)
+        start_point = np.array([start_state[0].getX(), start_state[0].getY()], dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
         goal_point, t, i = util.walk_along_trajectory(waypoints, t, i, CHUNK_DISTANCE)
         self.goal_point = goal_point
-        goal = ob.State(si)()
-        goal[0].setX(goal_point[0])
-        goal[0].setY(goal_point[1])
+        goal = ob.State(si.getStateSpace())
+        goal()[0].setX(goal_point[0])
+        goal()[0].setY(goal_point[1])
         self.setState(goal)
 
     def distanceGoal(start_state):
-        start_point = np.array([start_state[0].getX(), start_state[0].getY()]), dtype=np.float32)
+        start_point = np.array([start_state[0].getX(), start_state[0].getY()], dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
         return np.linalg.norm(self.goal_point, nearest_point)
 
@@ -69,7 +66,7 @@ class BiasmapControlSampler(oc.ControlSampler):
     def sample(self, control, start_state):
         bi_x = round(start_state[0].getX() * BIASMAP_XY_SUBDIV)
         bi_y = round(start_state[0].getY() * BIASMAP_XY_SUBDIV)
-        bi_yaw = round((start_state[0].getYaw() + math.pi) * BIASMAP_YAW_SUBDIV / (2 * math.pi))
+        bi_yaw = round((start_state[0].getYaw() + np.pi) * BIASMAP_YAW_SUBDIV / (2 * np.pi))
         result_data = self.biasmap[bi_x, bi_y, bi_yaw, :]
         result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
         result_exact = self.exact_flags[bi_x, bi_y, bi_yaw, :]
@@ -90,13 +87,13 @@ class BiasmapControlSampler(oc.ControlSampler):
 class QCPlan1:
     def __init__(self, agent_name, waypoints_fn, gridmap_fn, biasmap_fn):
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
-        self.gridmap = np.load(gridmap_fn)
-        biasmap_data = np.load(biasmap_fn)
-        self.biasmap = biasmap_data["biasmap"]
-        self.biasmap_valid = biasmap_data["biasmap_valid"]
+        #self.gridmap = np.load(gridmap_fn)
+        #biasmap_data = np.load(biasmap_fn)
+        #self.biasmap = biasmap_data["biasmap"]
+        #self.biasmap_valid = biasmap_data["biasmap_valid"]
 
         self.se2space = ob.SE2StateSpace()
-        self.vectorspace = ob.RealVectorStateSpace(5)
+        self.vectorspace = ob.RealVectorStateSpace(6)
 
         self.statespace = ob.CompoundStateSpace()
         self.statespace.addSubspace(self.se2space, 1)
@@ -125,6 +122,7 @@ class QCPlan1:
         self.provided_car = util.RaceCar(PARAMS, 12345) # seed garbage not used; nobody cares
 
     def loop(self):
+        pass
         # On timer:
         
         # Issue prepared controls
@@ -133,15 +131,77 @@ class QCPlan1:
         # Save prepared controls
         
     def lidar_callback(self):
-        
+        pass
 
     def state_validity_check(self, state):
         return self.si.satisfiesBounds(state)
 
     def state_propagate(self, start, control, duration, state):
-        state[0].setX(start[0].getX() + control[0] * duration * cos(start[0].getYaw()))
-        state[0].setY(start[0].getY() + control[0] * duration * sin(start[0].getYaw()))
-        #state.setYaw(start.getYaw() + control[1] * duration)
+        assert duration == 1
+        
+        np_state = np.array([
+            start[0].getX(),
+            start[0].getY(),
+            start[1][0],
+            start[1][1],
+            start[0].getYaw(),
+            start[1][2],
+            start[1][3],
+        ])
+        
+        steer = start[1][5]
+        steer0 = start[1][4]
+        vel = control[1]
+        
+        for i in range(CHUNK_MULTIPLIER):
+            print("ompl", steer, vel)
+            self.provided_car.update_pose(control[0], control[1])
+            # steering angle velocity input to steering velocity acceleration input
+            accl, sv = util.pid(vel, steer, np_state[3], np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
+            
+            # update physics, get RHS of diff'eq
+            f = util.vehicle_dynamics_st(
+                np_state,
+                np.array([sv, accl]),
+                PARAMS['mu'],
+                PARAMS['C_Sf'],
+                PARAMS['C_Sr'],
+                PARAMS['lf'],
+                PARAMS['lr'],
+                PARAMS['h'],
+                PARAMS['m'],
+                PARAMS['I'],
+                PARAMS['s_min'],
+                PARAMS['s_max'],
+                PARAMS['sv_min'],
+                PARAMS['sv_max'],
+                PARAMS['v_switch'],
+                PARAMS['a_max'],
+                PARAMS['v_min'],
+                PARAMS['v_max'])
+
+            # update state
+            np_state = np_state + f * PHYSICS_TIMESTEP
+
+            # bound yaw angle
+            if np_state[4] > 2*np.pi:
+                np_state[4] = np_state[4] - 2*np.pi
+            elif np_state[4] < 0:
+                np_state[4] = np_state[4] + 2*np.pi
+                
+            steer = steer0
+            steer0 = control[0]
+            vel = control[1]
+        
+        state[0].setX(np_state[0])
+        state[0].setY(np_state[1])
+        state[0].setYaw(np_state[4])
+        state[1][0] = np_state[2]
+        state[1][1] = np_state[3]
+        state[1][2] = np_state[5]
+        state[1][3] = np_state[6]
+        state[1][4] = steer0
+        state[1][5] = steer
 
     def csampler_alloc(self, control_space):
         return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
