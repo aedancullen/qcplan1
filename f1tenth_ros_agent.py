@@ -68,9 +68,9 @@ class BiasmapControlSampler(oc.ControlSampler):
         self.exact_flags = np.ones_like(biasmap, dtype=bool)
 
     def sample(self, control, start_state):
-        bi_x = np.round(start_state[0].getX() * BIASMAP_XY_SUBDIV)
-        bi_y = np.round(start_state[0].getY() * BIASMAP_XY_SUBDIV)
-        bi_yaw = np.round((start_state[0].getYaw() + np.pi) * BIASMAP_YAW_SUBDIV / (2 * np.pi))
+        bi_x = round(start_state[0].getX() * BIASMAP_XY_SUBDIV)
+        bi_y = round(start_state[0].getY() * BIASMAP_XY_SUBDIV)
+        bi_yaw = round((start_state[0].getYaw() + np.pi) * BIASMAP_YAW_SUBDIV / (2 * np.pi))
         result_data = self.biasmap[bi_x, bi_y, bi_yaw, :]
         result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
         result_exact = self.exact_flags[bi_x, bi_y, bi_yaw, :]
@@ -119,11 +119,17 @@ class QCPlan1:
 
         self.ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(self.si))
         
+        self.last_physics_ticks_elapsed = 0
         self.input_scan = None
         self.input_info = None
 
     def loop(self, timer):
-        pass
+        physics_ticks_elapsed = round(self.input_info.ego_elapsed_time / PHYSICS_TIMESTEP)
+        physics_ticks_new = physics_ticks_elapsed - self.last_physics_ticks_elapsed
+        self.last_physics_ticks_elapsed = physics_ticks_elapsed
+        
+        print(physics_ticks_new)
+        #print(self.input_scan)
         # On timer:
         
         # Issue prepared controls
@@ -217,5 +223,5 @@ if __name__ == "__main__":
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, qc.scan_callback, queue_size=1)
-    info_sub = rospy.Subscriber("/%s/race_info" % agent_name, RaceInfo, qc.info_callback, queue_size=1)
+    info_sub = rospy.Subscriber("/race_info", RaceInfo, qc.info_callback, queue_size=1)
     rospy.spin()
