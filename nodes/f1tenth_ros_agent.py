@@ -1,6 +1,6 @@
-#import rospy
-#from sensor_msgs.msg import LaserScan
-#from ackermann_msgs.msg import AckermannDriveStamped
+import rospy
+from sensor_msgs.msg import LaserScan
+from ackermann_msgs.msg import AckermannDriveStamped
 
 import numpy as np
 from ompl import util as ou
@@ -115,9 +115,8 @@ class QCPlan1:
 
         self.ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(self.si))
         
-        self.last_controls = None
-        self.last_state = None
-        self.last_scan = None
+        self.input_scan = None
+        self.input_info = None
 
     def loop(self):
         pass
@@ -128,7 +127,10 @@ class QCPlan1:
         # Get latest scan, setup and plan for next chunk
         # Save prepared controls
         
-    def lidar_callback(self):
+    def scan_callback(self):
+        pass
+    
+    def info_callback(self):
         pass
 
     def state_validity_check(self, state):
@@ -200,72 +202,9 @@ class QCPlan1:
     def csampler_alloc(self, control_space):
         return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
 
-def plan():
-    # construct the state space we are planning in
-    space = ob.SE2StateSpace()
-
-    # set the bounds for the R^2 part of SE(2)
-    bounds = ob.RealVectorBounds(2)
-    bounds.setLow(-1)
-    bounds.setHigh(1)
-    space.setBounds(bounds)
-
-    # create a control space
-    cspace = oc.RealVectorControlSpace(space, 2)
-
-    # set the bounds for the control space
-    cbounds = ob.RealVectorBounds(2)
-    cbounds.setLow(-.3)
-    cbounds.setHigh(.3)
-    cspace.setBounds(cbounds)
-
-    # define a simple setup class
-    ss = oc.SimpleSetup(cspace)
-    ss.setStateValidityChecker(ob.StateValidityCheckerFn( \
-        partial(state_validity_check, ss.getSpaceInformation())))
-    ss.setStatePropagator(oc.StatePropagatorFn(state_propagate))
-
-    # create a start state
-    start = ob.State(space)
-    start().setX(-0.5)
-    start().setY(0.0)
-    start().setYaw(0.0)
-
-    # create a goal state
-    goal = ob.State(space)
-    goal().setX(0.0)
-    goal().setY(0.5)
-    goal().setYaw(0.0)
-
-    # set the start and goal states
-    ss.setStartAndGoalStates(start, goal, 0.1)
-
-    # (optionally) set planner
-    si = ss.getSpaceInformation()
-    planner = oc.SST(si)
-    #planner = oc.EST(si)
-    #planner = oc.KPIECE1(si) # this is the default
-    # SyclopEST and SyclopRRT require a decomposition to guide the search
-    #decomp = MyDecomposition(32, bounds)
-    #planner = oc.SyclopEST(si, decomp)
-    #planner = oc.SyclopRRT(si, decomp)
-    ss.setPlanner(planner)
-    # (optionally) set propagation step size
-    si.setPropagationStepSize(1)
-    si.setMinMaxControlDuration(1, 1)
-
-    ss.getControlSpace().setControlSamplerAllocator(oc.ControlSamplerAllocator(csampler_alloc))
-    ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(si))
-
-    # attempt to solve the problem
-    solved = ss.solve(0.100)
-
-    if solved:
-        # print the path to screen
-        print("Found solution:\n%s" % ss.getSolutionPath().printAsMatrix())
-
 if __name__ == "__main__":
     qc = QCPlan1()
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
-    #scan_sub = rospy.Subscriber("/%s/scan" % self.agent_name, LaserScan, qc.lidar_callback, queue_size=1)
+    #scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, qc.scan_callback, queue_size=1)
+    #info_sub = rospy.Sbuscriber("/%s/race_info" % agent_name, something, qc.info_callback, queue_size=1)
     rospy.spin()
