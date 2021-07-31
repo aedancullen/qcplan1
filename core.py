@@ -135,7 +135,6 @@ class QCPlan1:
         return self.si.satisfiesBounds(state)
 
     def state_propagate(self, start, control, duration, state):
-        
         np_state = np.array([
             start[0].getX(),
             start[0].getY(),
@@ -151,7 +150,6 @@ class QCPlan1:
         vel = control[1]
         
         for i in range(int(duration)):
-
             # steering angle velocity input to steering velocity acceleration input
             accl, sv = util.pid(vel, steer, np_state[3], np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
             
@@ -271,3 +269,4 @@ if __name__ == "__main__":
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     #scan_sub = rospy.Subscriber("/%s/scan" % self.agent_name, LaserScan, qc.lidar_callback, queue_size=1)
     rospy.spin()
+
