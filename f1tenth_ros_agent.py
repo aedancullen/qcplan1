@@ -1,3 +1,7 @@
+#!/usr/bin/python3
+
+import os
+
 import rospy
 from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
@@ -85,7 +89,7 @@ class BiasmapControlSampler(oc.ControlSampler):
                 control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
 
 class QCPlan1:
-    def __init__(self, agent_name, waypoints_fn, gridmap_fn, biasmap_fn):
+    def __init__(self, waypoints_fn, gridmap_fn, biasmap_fn):
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
         #self.gridmap = np.load(gridmap_fn)
         #biasmap_data = np.load(biasmap_fn)
@@ -203,6 +207,8 @@ class QCPlan1:
         return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
 
 if __name__ == "__main__":
+    agent_name = os.environ.get("F1TENTH_AGENT_NAME")
+    rospy.init_node('gym_agent_%s' % self.agent_name, anonymous=True)
     qc = QCPlan1()
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     #scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, qc.scan_callback, queue_size=1)
