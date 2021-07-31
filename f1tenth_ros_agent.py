@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-
 import os
 
 import rospy
@@ -122,7 +121,7 @@ class QCPlan1:
         self.input_scan = None
         self.input_info = None
 
-    def loop(self):
+    def loop(self, timer):
         pass
         # On timer:
         
@@ -131,11 +130,11 @@ class QCPlan1:
         # Get latest scan, setup and plan for next chunk
         # Save prepared controls
         
-    def scan_callback(self):
-        pass
+    def scan_callback(self, scan):
+        self.input_scan = scan
     
-    def info_callback(self):
-        pass
+    def info_callback(self, info):
+        self.input_info = info
 
     def state_validity_check(self, state):
         return self.si.satisfiesBounds(state)
@@ -208,8 +207,13 @@ class QCPlan1:
 
 if __name__ == "__main__":
     agent_name = os.environ.get("F1TENTH_AGENT_NAME")
-    rospy.init_node('gym_agent_%s' % self.agent_name, anonymous=True)
-    qc = QCPlan1()
+    rospy.init_node("gym_agent_%s" % agent_name, anonymous=True)
+    filepath = os.path.abspath(os.path.dirname(__file__))
+    qc = QCPlan1(
+        "%s/waypoints.csv" % filepath,
+        "%s/gridmap.npy" % filepath,
+        "%s/biasmap.npz" % filepath,
+    )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     #scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, qc.scan_callback, queue_size=1)
     #info_sub = rospy.Sbuscriber("/%s/race_info" % agent_name, something, qc.info_callback, queue_size=1)
