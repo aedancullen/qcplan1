@@ -4,6 +4,7 @@ import os
 import rospy
 from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
+from f1tenth_gym_ros.msg import RaceInfo
 
 import numpy as np
 from ompl import util as ou
@@ -215,6 +216,6 @@ if __name__ == "__main__":
         "%s/biasmap.npz" % filepath,
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
-    #scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, qc.scan_callback, queue_size=1)
-    #info_sub = rospy.Sbuscriber("/%s/race_info" % agent_name, something, qc.info_callback, queue_size=1)
+    scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, qc.scan_callback, queue_size=1)
+    info_sub = rospy.Subscriber("/%s/race_info" % agent_name, RaceInfo, qc.info_callback, queue_size=1)
     rospy.spin()
