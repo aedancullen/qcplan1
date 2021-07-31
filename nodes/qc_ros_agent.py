@@ -269,4 +269,3 @@ if __name__ == "__main__":
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     #scan_sub = rospy.Subscriber("/%s/scan" % self.agent_name, LaserScan, qc.lidar_callback, queue_size=1)
     rospy.spin()
-

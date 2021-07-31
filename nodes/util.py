@@ -288,4 +288,3 @@ def bresenham(start, end):
         points.reverse()
     points = np.array(points)
     return points
-
