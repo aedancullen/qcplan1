@@ -89,7 +89,9 @@ class BiasmapControlSampler(oc.ControlSampler):
                 control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
 
 class QCPlan1:
-    def __init__(self, waypoints_fn, gridmap_fn, biasmap_fn):
+    def __init__(self, hardware_map, waypoints_fn, gridmap_fn, biasmap_fn):
+        self.hardware_map = hardware_map
+        
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
         #self.gridmap = np.load(gridmap_fn)
         #biasmap_data = np.load(biasmap_fn)
@@ -98,6 +100,12 @@ class QCPlan1:
 
         self.se2space = ob.SE2StateSpace()
         self.vectorspace = ob.RealVectorStateSpace(6)
+        bounds = ob.RealVectorBounds(2)
+        bounds.setLow(0, -5)
+        bounds.setLow(1, -5)
+        bounds.setHigh(0, 5)
+        bounds.setHigh(1, 5)
+        #self.vectorspace.setBounds(bounds)
 
         self.statespace = ob.CompoundStateSpace()
         self.statespace.addSubspace(self.se2space, 1)
@@ -119,29 +127,68 @@ class QCPlan1:
 
         self.ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(self.si))
         
+        #========
+        
         self.last_physics_ticks_elapsed = 0
-        self.input_scan = None
-        self.input_info = None
+        self.last_control = [0, 0]
+        self.control = None
+        
+        while not hardware_map.ready():
+            rospy.sleep(0.001)
+        
+        self.state = ob.State(self.statespace)
+        state = self.state()
+        if hardware_map.scan.header.frame_id.startswith("ego"):
+            i = 0
+        else:
+            i = 1
+        state[0].setX(0. + (i * 0.75))
+        state[0].setY(0. - (i*1.5))
+        state[0].setYaw(np.radians(60))
+        state[1][0] = 0
+        state[1][1] = 0
+        state[1][2] = 0
+        state[1][3] = 0
+        state[1][4] = 0
+        state[1][5] = 0
 
     def loop(self, timer):
-        physics_ticks_elapsed = round(self.input_info.ego_elapsed_time / PHYSICS_TIMESTEP)
+        if self.control is not None:
+            self.hardware_map.drive(self.control[0], self.control[1])
+
+        physics_ticks_elapsed = round(self.hardware_map.race_info.ego_elapsed_time / PHYSICS_TIMESTEP)
         physics_ticks_new = physics_ticks_elapsed - self.last_physics_ticks_elapsed
         self.last_physics_ticks_elapsed = physics_ticks_elapsed
         
-        print(physics_ticks_new)
-        #print(self.input_scan)
-        # On timer:
+        self.state_propagate(self.state(), self.last_control, physics_ticks_new, self.state())
         
-        # Issue prepared controls
-        # Compute next position after chunk duration
-        # Get latest scan, setup and plan for next chunk
-        # Save prepared controls
+        future_state = self.state
+        if self.control is not None:
+            future_state = ob.State(self.statespace)
+            self.state_propagate(self.state(), self.control, CHUNK_MULTIPLIER, future_state())
+            self.last_control = self.control
+
+        # Plan from future_state and save plan in self.control
+        self.ss.clear()
+        self.ss.setStartState(future_state)
+        goal = CourseProgressGoal(self.si, self.waypoints, future_state())
+        #start_point = np.array([future_state[0].getX(), future_state[0].getY()], dtype=np.float32)
+        #nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
+        #goal_point, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
+        #goal = ob.State(self.statespace)
+        #goal()[0].setX(goal_point[0])
+        #goal()[0].setY(goal_point[1])
+        self.ss.setGoal(goal)
+        bounds = ob.RealVectorBounds(2)
+        bounds.setLow(0, -5)
+        bounds.setLow(1, -5)
+        bounds.setHigh(0, 5)
+        bounds.setHigh(1, 5)
+        self.se2space.setBounds(bounds)
+        solved = self.ss.solve(CHUNK_DURATION - 0.010)
         
-    def scan_callback(self, scan):
-        self.input_scan = scan
-    
-    def info_callback(self, info):
-        self.input_info = info
+        print(future_state()[0].getX())
+        self.control = [0, 1]
 
     def state_validity_check(self, state):
         return self.si.satisfiesBounds(state)
@@ -212,16 +259,39 @@ class QCPlan1:
     def csampler_alloc(self, control_space):
         return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
 
+class HardwareMap:
+    def __init__(self):
+        self.scan = None
+        self.race_info = None
+
+        self.scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, self.scan_callback, queue_size=1)
+        self.race_info_sub = rospy.Subscriber("/race_info", RaceInfo, self.race_info_callback, queue_size=1)
+        self.drive_pub = rospy.Publisher("/%s/drive" % agent_name, AckermannDriveStamped, queue_size=1)
+
+    def scan_callback(self, scan):
+        self.scan = scan
+
+    def race_info_callback(self, race_info):
+        self.race_info = race_info
+        
+    def drive(self, steering_angle, speed):
+        msg = AckermannDriveStamped()
+        msg.drive.steering_angle = steering_angle
+        msg.drive.speed = speed
+        self.drive_pub.publish(msg)
+        
+    def ready(self):
+        return self.scan is not None and self.race_info is not None
+
 if __name__ == "__main__":
     agent_name = os.environ.get("F1TENTH_AGENT_NAME")
     rospy.init_node("gym_agent_%s" % agent_name, anonymous=True)
+    
     filepath = os.path.abspath(os.path.dirname(__file__))
-    qc = QCPlan1(
+    qc = QCPlan1(HardwareMap(),
         "%s/waypoints.csv" % filepath,
         "%s/gridmap.npy" % filepath,
         "%s/biasmap.npz" % filepath,
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
-    scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, qc.scan_callback, queue_size=1)
-    info_sub = rospy.Subscriber("/race_info", RaceInfo, qc.info_callback, queue_size=1)
     rospy.spin()
