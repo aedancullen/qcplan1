@@ -100,12 +100,10 @@ class QCPlan1:
 
         self.se2space = ob.SE2StateSpace()
         self.vectorspace = ob.RealVectorStateSpace(6)
-        bounds = ob.RealVectorBounds(2)
-        bounds.setLow(0, -5)
-        bounds.setLow(1, -5)
-        bounds.setHigh(0, 5)
-        bounds.setHigh(1, 5)
-        #self.vectorspace.setBounds(bounds)
+        bounds = ob.RealVectorBounds(6)
+        bounds.setLow(-100)
+        bounds.setHigh(100)
+        self.vectorspace.setBounds(bounds)
 
         self.statespace = ob.CompoundStateSpace()
         self.statespace.addSubspace(self.se2space, 1)
