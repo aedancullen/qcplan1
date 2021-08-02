@@ -30,7 +30,8 @@ SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbac
 CHUNK_MULTIPLIER = 10
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 10
+CHUNK_DISTANCE = 1
+GOAL_THRESHOLD = 1
 
 class CourseProgressGoal(ob.GoalState):
     def __init__(self, si, waypoints, start_state):
@@ -94,11 +95,31 @@ class QCPlan1:
         
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
         #self.gridmap = np.load(gridmap_fn)
-        #biasmap_data = np.load(biasmap_fn)
-        #self.biasmap = biasmap_data["biasmap"]
-        #self.biasmap_valid = biasmap_data["biasmap_valid"]
+        x_m = 50
+        y_m = 50
+        self.biasmap_fn = biasmap_fn
+        try:
+            biasmap_data = np.load(biasmap_fn)
+            self.biasmap = biasmap_data["biasmap"]
+            self.biasmap_valid = biasmap_data["biasmap_valid"]
+            print("====>", "Biasmap loaded from disk")
+        except:
+            self.biasmap = np.zeros((
+                round(x_m * BIASMAP_XY_SUBDIV) + 1,
+                round(y_m * BIASMAP_XY_SUBDIV) + 1,
+                BIASMAP_YAW_SUBDIV + 1,
+                NUM_CONTROLS,
+            ), dtype=np.float32)
+            self.biasmap_valid = np.zeros((
+                round(x_m * BIASMAP_XY_SUBDIV) + 1,
+                round(y_m * BIASMAP_XY_SUBDIV) + 1,
+                BIASMAP_YAW_SUBDIV + 1,
+            ), dtype=bool)
+            print("====>", "Biasmap created fresh")
 
         self.se2space = ob.SE2StateSpace()
+        self.se2space.setSubspaceWeight(0, 1)
+        self.se2space.setSubspaceWeight(1, 0)
         self.vectorspace = ob.RealVectorStateSpace(6)
         bounds = ob.RealVectorBounds(6)
         bounds.setLow(-100)
@@ -117,8 +138,8 @@ class QCPlan1:
         self.ss.setStatePropagator(oc.StatePropagatorFn(self.state_propagate))
 
         self.si = self.ss.getSpaceInformation()
-        self.si.setPropagationStepSize(1)
-        self.si.setMinMaxControlDuration(CHUNK_MULTIPLIER, CHUNK_MULTIPLIER)
+        self.si.setPropagationStepSize(CHUNK_MULTIPLIER)
+        self.si.setMinMaxControlDuration(1, 1)
 
         self.planner = oc.SST(self.si)
         self.ss.setPlanner(self.planner)
@@ -127,10 +148,13 @@ class QCPlan1:
         
         #========
         
+        self.np_state = np.zeros(7)
+        
         self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
         self.control = None
         
+        print("====>", "Waiting for hardware map")
         while not hardware_map.ready():
             rospy.sleep(0.001)
         
@@ -138,8 +162,10 @@ class QCPlan1:
         state = self.state()
         if hardware_map.scan.header.frame_id.startswith("ego"):
             i = 0
+            print("====>", "Identity is ego")
         else:
             i = 1
+            print("====>", "Identity is opp")
         state[0].setX(0. + (i * 0.75))
         state[0].setY(0. - (i*1.5))
         state[0].setYaw(np.radians(60))
@@ -149,6 +175,10 @@ class QCPlan1:
         state[1][3] = 0
         state[1][4] = 0
         state[1][5] = 0
+        
+    def shutdown(self):
+        print("====>", "Saving biasmap to disk")
+        np.savez(self.biasmap_fn, biasmap=self.biasmap, biasmap_valid=self.biasmap_valid)
 
     def loop(self, timer):
         if self.control is not None:
@@ -158,25 +188,28 @@ class QCPlan1:
         physics_ticks_new = physics_ticks_elapsed - self.last_physics_ticks_elapsed
         self.last_physics_ticks_elapsed = physics_ticks_elapsed
         
+        if physics_ticks_new != CHUNK_MULTIPLIER:
+            print("====>", "Saw", physics_ticks_new, "ticks in", CHUNK_MULTIPLIER, "tick interval")
+        
         self.state_propagate(self.state(), self.last_control, physics_ticks_new, self.state())
         
         future_state = self.state
         if self.control is not None:
             future_state = ob.State(self.statespace)
-            self.state_propagate(self.state(), self.control, CHUNK_MULTIPLIER, future_state())
+            self.state_propagate(self.state(), self.control, physics_ticks_new, future_state())
             self.last_control = self.control
 
         # Plan from future_state and save plan in self.control
         self.ss.clear()
         self.ss.setStartState(future_state)
-        goal = CourseProgressGoal(self.si, self.waypoints, future_state())
-        #start_point = np.array([future_state[0].getX(), future_state[0].getY()], dtype=np.float32)
-        #nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
-        #goal_point, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
-        #goal = ob.State(self.statespace)
-        #goal()[0].setX(goal_point[0])
-        #goal()[0].setY(goal_point[1])
-        self.ss.setGoal(goal)
+        #goal = CourseProgressGoal(self.si, self.waypoints, future_state())
+        start_point = np.array([future_state()[0].getX(), future_state()[0].getY()], dtype=np.float32)
+        nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
+        goal_point, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
+        goal = ob.State(self.statespace)
+        goal()[0].setX(goal_point[0])
+        goal()[0].setY(goal_point[1])
+        self.ss.setGoalState(goal, GOAL_THRESHOLD)
         bounds = ob.RealVectorBounds(2)
         bounds.setLow(0, -5)
         bounds.setLow(1, -5)
@@ -184,23 +217,24 @@ class QCPlan1:
         bounds.setHigh(1, 5)
         self.se2space.setBounds(bounds)
         solved = self.ss.solve(CHUNK_DURATION - 0.010)
+        if solved:
+            pass
+        else:
+            print("====>", "Not solved, zeroing controls")
         
-        print(future_state()[0].getX())
-        self.control = [0, 1]
+        self.control = [0, 0]
 
     def state_validity_check(self, state):
         return self.si.satisfiesBounds(state)
 
     def state_propagate(self, start, control, duration, state):
-        np_state = np.array([
-            start[0].getX(),
-            start[0].getY(),
-            start[1][0],
-            start[1][1],
-            start[0].getYaw(),
-            start[1][2],
-            start[1][3],
-        ])
+        self.np_state[0] = start[0].getX()
+        self.np_state[1] = start[0].getY()
+        self.np_state[2] = start[1][0]
+        self.np_state[3] = start[1][1]
+        self.np_state[4] = start[0].getYaw()
+        self.np_state[5] = start[1][2]
+        self.np_state[6] = start[1][3]
         
         steer = start[1][5]
         steer0 = start[1][4]
@@ -208,11 +242,11 @@ class QCPlan1:
         
         for i in range(int(duration)):
             # steering angle velocity input to steering velocity acceleration input
-            accl, sv = util.pid(vel, steer, np_state[3], np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
+            accl, sv = util.pid(vel, steer, self.np_state[3], self.np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
             
             # update physics, get RHS of diff'eq
             f = util.vehicle_dynamics_st(
-                np_state,
+                self.np_state,
                 np.array([sv, accl]),
                 PARAMS['mu'],
                 PARAMS['C_Sf'],
@@ -232,25 +266,25 @@ class QCPlan1:
                 PARAMS['v_max'])
 
             # update state
-            np_state = np_state + f * PHYSICS_TIMESTEP
+            np_state = self.np_state + f * PHYSICS_TIMESTEP
 
             # bound yaw angle
-            if np_state[4] > 2*np.pi:
-                np_state[4] = np_state[4] - 2*np.pi
-            elif np_state[4] < 0:
-                np_state[4] = np_state[4] + 2*np.pi
+            if self.np_state[4] > 2*np.pi:
+                self.np_state[4] = self.np_state[4] - 2*np.pi
+            elif self.np_state[4] < 0:
+                self.np_state[4] = self.np_state[4] + 2*np.pi
                 
             steer = steer0
             steer0 = control[0]
             vel = control[1]
         
-        state[0].setX(np_state[0])
-        state[0].setY(np_state[1])
-        state[0].setYaw(np_state[4])
-        state[1][0] = np_state[2]
-        state[1][1] = np_state[3]
-        state[1][2] = np_state[5]
-        state[1][3] = np_state[6]
+        state[0].setX(self.np_state[0])
+        state[0].setY(self.np_state[1])
+        state[0].setYaw(self.np_state[4])
+        state[1][0] = self.np_state[2]
+        state[1][1] = self.np_state[3]
+        state[1][2] = self.np_state[5]
+        state[1][3] = self.np_state[6]
         state[1][4] = steer0
         state[1][5] = steer
 
@@ -292,4 +326,5 @@ if __name__ == "__main__":
         "%s/biasmap.npz" % filepath,
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
+    rospy.on_shutdown(qc.shutdown)
     rospy.spin()
