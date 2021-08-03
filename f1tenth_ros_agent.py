@@ -131,6 +131,10 @@ class QCPlan1:
         self.statespace.addSubspace(self.vectorspace, 0)
 
         self.controlspace = oc.RealVectorControlSpace(self.statespace, 2)
+        cbounds = ob.RealVectorBounds(2)
+        cbounds.setLow(-100)
+        cbounds.setHigh(100)
+        self.controlspace.setBounds(cbounds)
         self.controlspace.setControlSamplerAllocator(oc.ControlSamplerAllocator(self.csampler_alloc))
 
         self.ss = oc.SimpleSetup(self.controlspace)
@@ -326,5 +330,4 @@ if __name__ == "__main__":
         "%s/biasmap.npz" % filepath,
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
-    rospy.on_shutdown(qc.shutdown)
     rospy.spin()
