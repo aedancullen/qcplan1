@@ -31,7 +31,7 @@ CHUNK_MULTIPLIER = 10
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 1
-GOAL_THRESHOLD = 1
+GOAL_THRESHOLD = 0.25
 
 class CourseProgressGoal(ob.GoalState):
     def __init__(self, si, waypoints, start_state):
@@ -47,10 +47,10 @@ class CourseProgressGoal(ob.GoalState):
         goal()[0].setY(goal_point[1])
         self.setState(goal)
 
-    def distanceGoal(start_state):
+    def distanceGoal(self, start_state):
         start_point = np.array([start_state[0].getX(), start_state[0].getY()], dtype=np.float32)
-        nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
-        return np.linalg.norm(self.goal_point, nearest_point)
+        nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
+        return np.linalg.norm(self.goal_point - nearest_point)
 
 class TimestepOptimizationObjective(ob.OptimizationObjective):
     def __init__(self, si):
@@ -118,23 +118,19 @@ class QCPlan1:
             print("====>", "Biasmap created fresh")
 
         self.se2space = ob.SE2StateSpace()
-        self.se2space.setSubspaceWeight(0, 1)
-        self.se2space.setSubspaceWeight(1, 0)
+        self.se2space.setSubspaceWeight(0, 1) # R^2 subspace weight 1
+        self.se2space.setSubspaceWeight(1, 0) # SO(2) subspace weight 0
         self.vectorspace = ob.RealVectorStateSpace(6)
         bounds = ob.RealVectorBounds(6)
-        bounds.setLow(-100)
+        bounds.setLow(-100) # don't care
         bounds.setHigh(100)
         self.vectorspace.setBounds(bounds)
 
         self.statespace = ob.CompoundStateSpace()
-        self.statespace.addSubspace(self.se2space, 1)
-        self.statespace.addSubspace(self.vectorspace, 0)
+        self.statespace.addSubspace(self.se2space, 1) # weight 1
+        self.statespace.addSubspace(self.vectorspace, 0) # weight 0
 
         self.controlspace = oc.RealVectorControlSpace(self.statespace, 2)
-        cbounds = ob.RealVectorBounds(2)
-        cbounds.setLow(-100)
-        cbounds.setHigh(100)
-        self.controlspace.setBounds(cbounds)
         self.controlspace.setControlSamplerAllocator(oc.ControlSamplerAllocator(self.csampler_alloc))
 
         self.ss = oc.SimpleSetup(self.controlspace)
@@ -146,13 +142,15 @@ class QCPlan1:
         self.si.setMinMaxControlDuration(1, 1)
 
         self.planner = oc.SST(self.si)
+        self.planner.setPruningRadius(0.01) # tenth of default
+        self.planner.setSelectionRadius(0.02) # tenth of default
         self.ss.setPlanner(self.planner)
 
         self.ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(self.si))
         
         #========
         
-        self.np_state = np.zeros(7)
+        self.np_state = np.zeros(7) # for state_propagate to avoid recreating array
         
         self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
@@ -270,7 +268,7 @@ class QCPlan1:
                 PARAMS['v_max'])
 
             # update state
-            np_state = self.np_state + f * PHYSICS_TIMESTEP
+            self.np_state = self.np_state + f * PHYSICS_TIMESTEP
 
             # bound yaw angle
             if self.np_state[4] > 2*np.pi:
