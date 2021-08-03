@@ -13,7 +13,7 @@ from ompl import control as oc
 
 import util
 
-#ou.setLogLevel(ou.LOG_WARN)
+ou.setLogLevel(ou.LOG_WARN)
 
 PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
 
@@ -23,14 +23,15 @@ CONTROL_UPPER = [PARAMS["s_max"], PARAMS["v_max"]]
 
 BIASMAP_XY_SUBDIV = 10
 BIASMAP_YAW_SUBDIV = 20
+BIASMAP_CONTROL_STDEV = [(CONTROL_UPPER[i] - CONTROL_LOWER[i]) / 5 for i in range(NUM_CONTROLS)]
 
 PHYSICS_TIMESTEP = 0.01 # Actual value used in calculation
 SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbacks
 
-CHUNK_MULTIPLIER = 10
+CHUNK_MULTIPLIER = 20
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 1
+CHUNK_DISTANCE = 2
 GOAL_THRESHOLD = 0.25
 
 class CourseProgressGoal(ob.GoalState):
@@ -58,7 +59,7 @@ class TimestepOptimizationObjective(ob.OptimizationObjective):
         self.si = si
 
     def motionCost(self, s1, s2):
-        return 1# + self.si.distance(s1, s2)
+        return 1 + self.si.distance(s1, s2)
 
 class BiasmapControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, biasmap, biasmap_valid):
@@ -213,18 +214,20 @@ class QCPlan1:
         goal()[0].setY(goal_point[1])
         self.ss.setGoalState(goal, GOAL_THRESHOLD)
         bounds = ob.RealVectorBounds(2)
-        bounds.setLow(0, -5)
-        bounds.setLow(1, -5)
-        bounds.setHigh(0, 5)
-        bounds.setHigh(1, 5)
+        bounds.setLow(0, -50)
+        bounds.setLow(1, -50)
+        bounds.setHigh(0, 50)
+        bounds.setHigh(1, 50)
         self.se2space.setBounds(bounds)
         solved = self.ss.solve(CHUNK_DURATION - 0.010)
         if solved:
-            pass
+            solution = self.ss.getSolutionPath().getControls()
+            segment = solution[0]
+            self.control = [segment[0], segment[1]]
+            print("====>", self.control)
         else:
             print("====>", "Not solved, zeroing controls")
-        
-        self.control = [0, 0]
+            self.control = [0, 0]
 
     def state_validity_check(self, state):
         return self.si.satisfiesBounds(state)
@@ -289,6 +292,9 @@ class QCPlan1:
         state[1][3] = self.np_state[6]
         state[1][4] = steer0
         state[1][5] = steer
+
+        if not self.si.satisfiesBounds(state):
+            print(self.np_state)
 
     def csampler_alloc(self, control_space):
         return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
