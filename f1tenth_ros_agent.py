@@ -123,8 +123,8 @@ class QCPlan1:
         self.se2space.setSubspaceWeight(1, 0) # SO(2) subspace weight 0
         self.vectorspace = ob.RealVectorStateSpace(6)
         bounds = ob.RealVectorBounds(6)
-        bounds.setLow(-100) # don't care
-        bounds.setHigh(100)
+        bounds.setLow(-99999) # don't care
+        bounds.setHigh(99999)
         self.vectorspace.setBounds(bounds)
 
         self.statespace = ob.CompoundStateSpace()
@@ -150,9 +150,7 @@ class QCPlan1:
         self.ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(self.si))
         
         #========
-        
-        self.np_state = np.zeros(7) # for state_propagate to avoid recreating array
-        
+
         self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
         self.control = None
@@ -191,15 +189,12 @@ class QCPlan1:
         physics_ticks_new = physics_ticks_elapsed - self.last_physics_ticks_elapsed
         self.last_physics_ticks_elapsed = physics_ticks_elapsed
         
-        if physics_ticks_new != CHUNK_MULTIPLIER:
-            print("====>", "Saw", physics_ticks_new, "ticks in", CHUNK_MULTIPLIER, "tick interval")
-        
         self.state_propagate(self.state(), self.last_control, physics_ticks_new, self.state())
-        
-        future_state = self.state
+
+        future_state = ob.State(self.statespace)
+        self.statespace.copyState(future_state(), self.state())
         if self.control is not None:
-            future_state = ob.State(self.statespace)
-            self.state_propagate(self.state(), self.control, physics_ticks_new, future_state())
+            self.state_propagate(self.state(), self.control, CHUNK_MULTIPLIER, future_state())
             self.last_control = self.control
 
         # Plan from future_state and save plan in self.control
@@ -221,10 +216,10 @@ class QCPlan1:
         self.se2space.setBounds(bounds)
         solved = self.ss.solve(CHUNK_DURATION - 0.010)
         if solved:
-            solution = self.ss.getSolutionPath().getControls()
-            segment = solution[0]
+            solution = self.ss.getSolutionPath()
+            segment = solution.getControls()[0]
             self.control = [segment[0], segment[1]]
-            print("====>", self.control)
+            print("====>", solution.getControlCount(), self.control)
         else:
             print("====>", "Not solved, zeroing controls")
             self.control = [0, 0]
@@ -233,13 +228,15 @@ class QCPlan1:
         return self.si.satisfiesBounds(state)
 
     def state_propagate(self, start, control, duration, state):
-        self.np_state[0] = start[0].getX()
-        self.np_state[1] = start[0].getY()
-        self.np_state[2] = start[1][0]
-        self.np_state[3] = start[1][1]
-        self.np_state[4] = start[0].getYaw()
-        self.np_state[5] = start[1][2]
-        self.np_state[6] = start[1][3]
+        np_state = np.array([
+            start[0].getX(),
+            start[0].getY(),
+            start[1][0],
+            start[1][1],
+            start[0].getYaw(),
+            start[1][2],
+            start[1][3],
+        ])
         
         steer = start[1][5]
         steer0 = start[1][4]
@@ -247,11 +244,11 @@ class QCPlan1:
         
         for i in range(int(duration)):
             # steering angle velocity input to steering velocity acceleration input
-            accl, sv = util.pid(vel, steer, self.np_state[3], self.np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
+            accl, sv = util.pid(vel, steer, np_state[3], np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
             
             # update physics, get RHS of diff'eq
             f = util.vehicle_dynamics_st(
-                self.np_state,
+                np_state,
                 np.array([sv, accl]),
                 PARAMS['mu'],
                 PARAMS['C_Sf'],
@@ -271,30 +268,29 @@ class QCPlan1:
                 PARAMS['v_max'])
 
             # update state
-            self.np_state = self.np_state + f * PHYSICS_TIMESTEP
+            np_state = np_state + f * PHYSICS_TIMESTEP
 
             # bound yaw angle
-            if self.np_state[4] > 2*np.pi:
-                self.np_state[4] = self.np_state[4] - 2*np.pi
-            elif self.np_state[4] < 0:
-                self.np_state[4] = self.np_state[4] + 2*np.pi
+            if np_state[4] > 2*np.pi:
+                np_state[4] = np_state[4] - 2*np.pi
+            elif np_state[4] < 0:
+                np_state[4] = np_state[4] + 2*np.pi
                 
             steer = steer0
             steer0 = control[0]
             vel = control[1]
         
-        state[0].setX(self.np_state[0])
-        state[0].setY(self.np_state[1])
-        state[0].setYaw(self.np_state[4])
-        state[1][0] = self.np_state[2]
-        state[1][1] = self.np_state[3]
-        state[1][2] = self.np_state[5]
-        state[1][3] = self.np_state[6]
+        state[0].setX(np_state[0])
+        state[0].setY(np_state[1])
+        state[0].setYaw(np_state[4])
+        state[1][0] = np_state[2]
+        state[1][1] = np_state[3]
+        state[1][2] = np_state[5]
+        state[1][3] = np_state[6]
         state[1][4] = steer0
         state[1][5] = steer
-
-        if not self.si.satisfiesBounds(state):
-            print(self.np_state)
+        
+        self.statespace.enforceBounds(state)
 
     def csampler_alloc(self, control_space):
         return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
