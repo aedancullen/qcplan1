@@ -33,35 +33,8 @@ SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbac
 CHUNK_MULTIPLIER = 20
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 2
-GOAL_THRESHOLD = 0.25
-
-class CourseProgressGoal(ob.GoalState):
-    def __init__(self, si, waypoints, start_state):
-        super().__init__(si)
-        self.si = si
-        self.waypoints = waypoints
-        start_point = np.array([start_state[0].getX(), start_state[0].getY()], dtype=np.float32)
-        nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, waypoints)
-        goal_point, t, i = util.walk_along_trajectory(waypoints, t, i, CHUNK_DISTANCE)
-        self.goal_point = goal_point
-        goal = ob.State(si.getStateSpace())
-        goal()[0].setX(goal_point[0])
-        goal()[0].setY(goal_point[1])
-        self.setState(goal)
-
-    def distanceGoal(self, start_state):
-        start_point = np.array([start_state[0].getX(), start_state[0].getY()], dtype=np.float32)
-        nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
-        return np.linalg.norm(self.goal_point - nearest_point)
-
-class TimestepOptimizationObjective(ob.OptimizationObjective):
-    def __init__(self, si):
-        super().__init__(si)
-        self.si = si
-
-    def motionCost(self, s1, s2):
-        return 1 + self.si.distance(s1, s2)
+CHUNK_DISTANCE = 5
+GOAL_THRESHOLD = 2
 
 class BiasmapControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, biasmap, biasmap_valid):
@@ -149,15 +122,13 @@ class QCPlan1:
         self.planner.setSelectionRadius(0.02) # tenth of default
         self.ss.setPlanner(self.planner)
 
-        self.ss.getProblemDefinition().setOptimizationObjective(TimestepOptimizationObjective(self.si))
-        
         #========
 
         self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
         self.control = None
         self.latched_map = None
-        
+
         print("====>", "Waiting for hardware map")
         while not hardware_map.ready():
             rospy.sleep(0.001)
@@ -215,7 +186,6 @@ class QCPlan1:
         # Plan from future state
         self.ss.clear()
         self.ss.setStartState(future_state)
-        #goal = CourseProgressGoal(self.si, self.waypoints, future_state())
         start_point = np.array([future_state()[0].getX(), future_state()[0].getY()], dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
         goal_point, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
