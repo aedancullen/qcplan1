@@ -238,9 +238,9 @@ class QCPlan1:
             for i in range(count):
                 n_state = states[i]
                 n_control = controls[i]
-                bi_x = round(n_state[0].getX() * BIASMAP_XY_SUBDIV)
-                bi_y = round(n_state[0].getY() * BIASMAP_XY_SUBDIV)
-                bi_yaw = round((n_state[0].getYaw() + np.pi) * BIASMAP_YAW_SUBDIV / (2 * np.pi))
+                bi_x = util.discretize(self.biasmap.shape[0], BIASMAP_XY_SUBDIV, n_state[0].getX())
+                bi_y = util.discretize(self.biasmap.shape[1], BIASMAP_XY_SUBDIV, n_state[0].getY())
+                bi_yaw = util.discretize(self.biasmap.shape[2], BIASMAP_YAW_SUBDIV, n_state[0].getYaw() / (2 * np.pi))
                 for c in range(NUM_CONTROLS):
                     self.biasmap[bi_x, bi_y, bi_yaw, c] = n_control[c]
                 self.biasmap_valid[bi_x, bi_y, bi_yaw] = True
