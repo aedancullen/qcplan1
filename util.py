@@ -52,6 +52,10 @@ def walk_along_trajectory(trajectory, t, i, distance):
     return point_out, t_out, i_out
 
 @njit(cache=True)
+def discretize(arrsize, subdiv, value):
+    return round(value * subdiv + arrsize / 2)
+
+@njit(cache=True)
 def accl_constraints(vel, accl, v_switch, a_max, v_min, v_max):
     """
     Acceleration constraints, adjusts the acceleration based on constraints

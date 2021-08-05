@@ -21,8 +21,10 @@ NUM_CONTROLS = 2
 CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
 CONTROL_UPPER = [PARAMS["s_max"], PARAMS["v_max"]]
 
+GRIDMAP_XY_SUBDIV = 10
+
 BIASMAP_XY_SUBDIV = 5
-BIASMAP_YAW_SUBDIV = 10
+BIASMAP_YAW_SUBDIV = 5
 BIASMAP_CONTROL_STDEV = [(CONTROL_UPPER[i] - CONTROL_LOWER[i]) / 10 for i in range(NUM_CONTROLS)]
 
 PHYSICS_TIMESTEP = 0.01 # Actual value used in calculation
@@ -70,9 +72,9 @@ class BiasmapControlSampler(oc.ControlSampler):
         self.exact_flags = np.ones_like(biasmap, dtype=bool)
 
     def sample(self, control, start_state):
-        bi_x = round(start_state[0].getX() * BIASMAP_XY_SUBDIV)
-        bi_y = round(start_state[0].getY() * BIASMAP_XY_SUBDIV)
-        bi_yaw = round((start_state[0].getYaw() + np.pi) * BIASMAP_YAW_SUBDIV / (2 * np.pi))
+        bi_x = util.discretize(self.biasmap.shape[0], BIASMAP_XY_SUBDIV, start_state[0].getX())
+        bi_y = util.discretize(self.biasmap.shape[1], BIASMAP_XY_SUBDIV, start_state[0].getY())
+        bi_yaw = util.discretize(self.biasmap.shape[2], BIASMAP_YAW_SUBDIV, start_state[0].getYaw() / (2 * np.pi))
         result_data = self.biasmap[bi_x, bi_y, bi_yaw, :]
         result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
         result_exact = self.exact_flags[bi_x, bi_y, bi_yaw, :]
@@ -95,7 +97,7 @@ class QCPlan1:
         self.hardware_map = hardware_map
         
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
-        #self.gridmap = np.load(gridmap_fn)
+        self.gridmap = np.zeros((1000, 1000), dtype=bool)#np.load(gridmap_fn)
         x_m = 50
         y_m = 50
         self.biasmap_fn = biasmap_fn
@@ -154,6 +156,7 @@ class QCPlan1:
         self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
         self.control = None
+        self.latched_map = None
         
         print("====>", "Waiting for hardware map")
         while not hardware_map.ready():
@@ -185,19 +188,31 @@ class QCPlan1:
         if self.control is not None:
             self.hardware_map.drive(self.control[0], self.control[1])
 
+        # Update real state
         physics_ticks_elapsed = round(self.hardware_map.race_info.ego_elapsed_time / PHYSICS_TIMESTEP)
         physics_ticks_new = physics_ticks_elapsed - self.last_physics_ticks_elapsed
         self.last_physics_ticks_elapsed = physics_ticks_elapsed
-        
         self.state_propagate(self.state(), self.last_control, physics_ticks_new, self.state())
 
+        # Latch map
+        self.latched_map = self.gridmap.copy()
+        for i in range(len(self.hardware_map.scan.ranges)):
+            dist = self.hardware_map.scan.ranges[i]
+            angle = np.radians(90) + self.hardware_map.scan.angle_min + i * self.hardware_map.scan.angle_increment
+            location_x = self.state()[0].getX() + dist * np.cos(angle)
+            location_y = self.state()[0].getY() + dist * np.sin(angle)
+            bi_x = util.discretize(self.latched_map.shape[0], GRIDMAP_XY_SUBDIV, location_x)
+            bi_y = util.discretize(self.latched_map.shape[1], GRIDMAP_XY_SUBDIV, location_y)
+            self.latched_map[bi_x, bi_y] = True
+
+        # Predict future state if controls were issued
         future_state = ob.State(self.statespace)
         self.statespace.copyState(future_state(), self.state())
         if self.control is not None:
             self.state_propagate(self.state(), self.control, CHUNK_MULTIPLIER, future_state())
             self.last_control = self.control
 
-        # Plan from future_state and save plan in self.control
+        # Plan from future state
         self.ss.clear()
         self.ss.setStartState(future_state)
         #goal = CourseProgressGoal(self.si, self.waypoints, future_state())
