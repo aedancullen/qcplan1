@@ -12,10 +12,9 @@ from ompl import base as ob
 from ompl import control as oc
 
 import util
+from util import PARAMS
 
 #ou.setLogLevel(ou.LOG_WARN)
-
-PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
 
 NUM_CONTROLS = 2
 CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
@@ -169,7 +168,7 @@ class QCPlan1:
         self.latched_map = self.gridmap.copy()
         for i in range(len(self.hardware_map.scan.ranges)):
             dist = self.hardware_map.scan.ranges[i]
-            angle = np.radians(90) + self.hardware_map.scan.angle_min + i * self.hardware_map.scan.angle_increment
+            angle = self.state()[0].getYaw() + self.hardware_map.scan.angle_min + i * self.hardware_map.scan.angle_increment
             location_x = self.state()[0].getX() + dist * np.cos(angle)
             location_y = self.state()[0].getY() + dist * np.sin(angle)
             bi_x = util.discretize(self.latched_map.shape[0], GRIDMAP_XY_SUBDIV, location_x)
@@ -222,7 +221,14 @@ class QCPlan1:
             self.control = [0, 0]
 
     def state_validity_check(self, state):
-        return self.si.satisfiesBounds(state)
+        np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
+        return util.fast_state_validity_check(
+            np_state,
+            self.latched_map,
+            GRIDMAP_XY_SUBDIV,
+            PARAMS["length"],
+            PARAMS["width"],
+        )
 
     def state_propagate(self, start, control, duration, state):
         np_state = np.array([
@@ -232,9 +238,9 @@ class QCPlan1:
             start[1][1],
             start[0].getYaw(),
             start[1][2],
-            start[1][3],
+            start[1][3], # start[1][4], start[1][5]
         ])
-        
+
         steer = start[1][5]
         steer0 = start[1][4]
         vel = control[1]

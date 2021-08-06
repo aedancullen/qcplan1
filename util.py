@@ -1,6 +1,8 @@
 import numpy as np
 from numba import njit
 
+PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
+
 @njit(fastmath=False, cache=True)
 def nearest_point_on_trajectory(point, trajectory):
     '''
@@ -249,46 +251,67 @@ def pid(speed, steer, current_speed, current_steer, max_sv, max_a, max_v, min_v)
     return accl, sv
 
 @njit(cache=True)
-def bresenham(start, end):
+def get_trmtx(pose):
     """
-    Implementation of Bresenham's line drawing algorithm
-    See en.wikipedia.org/wiki/Bresenham's_line_algorithm
-    Bresenham's Line Algorithm
-    Produces a np.array from start and end (original from roguebasin.com)
-    >>> points1 = bresenham((4, 4), (6, 10))
-    >>> print(points1)
-    np.array([[4,4], [4,5], [5,6], [5,7], [5,8], [6,9], [6,10]])
+    Get transformation matrix of vehicle frame -> global frame
+
+    Args:
+        pose (np.ndarray (3, )): current pose of the vehicle
+
+    return:
+        H (np.ndarray (4, 4)): transformation matrix
     """
-    # setup initial conditions
-    x1, y1 = start
-    x2, y2 = end
-    dx = x2 - x1
-    dy = y2 - y1
-    is_steep = abs(dy) > abs(dx)  # determine how steep the line is
-    if is_steep:  # rotate line
-        x1, y1 = y1, x1
-        x2, y2 = y2, x2
-    # swap start and end points if necessary and store swap state
-    swapped = False
-    if x1 > x2:
-        x1, x2 = x2, x1
-        y1, y2 = y2, y1
-        swapped = True
-    dx = x2 - x1  # recalculate differentials
-    dy = y2 - y1  # recalculate differentials
-    error = int(dx / 2.0)  # calculate error
-    y_step = 1 if y1 < y2 else -1
-    # iterate over bounding box generating points between start and end
-    y = y1
-    points = []
-    for x in range(x1, x2 + 1):
-        coord = [y, x] if is_steep else (x, y)
-        points.append(coord)
-        error -= abs(dy)
-        if error < 0:
-            y += y_step
-            error += dx
-    if swapped:  # reverse the list if the coordinates were swapped
-        points.reverse()
-    points = np.array(points)
-    return points
+    x = pose[0]
+    y = pose[1]
+    th = pose[2]
+    cos = np.cos(th)
+    sin = np.sin(th)
+    H = np.array([[cos, -sin, 0., x], [sin, cos, 0., y], [0., 0., 1., 0.], [0., 0., 0., 1.]])
+    return H
+
+@njit(cache=True)
+def get_vertices(pose, length, width):
+    """
+    Utility function to return vertices of the car body given pose and size
+
+    Args:
+        pose (np.ndarray, (3, )): current world coordinate pose of the vehicle
+        length (float): car length
+        width (float): car width
+
+    Returns:
+        vertices (np.ndarray, (4, 2)): corner vertices of the vehicle body
+    """
+    H = get_trmtx(pose)
+    rl = H.dot(np.asarray([[-length/2],[width/2],[0.], [1.]])).flatten()
+    rr = H.dot(np.asarray([[-length/2],[-width/2],[0.], [1.]])).flatten()
+    fl = H.dot(np.asarray([[length/2],[width/2],[0.], [1.]])).flatten()
+    fr = H.dot(np.asarray([[length/2],[-width/2],[0.], [1.]])).flatten()
+    rl = rl/rl[3]
+    rr = rr/rr[3]
+    fl = fl/fl[3]
+    fr = fr/fr[3]
+    vertices = np.asarray([[rl[0], rl[1]], [rr[0], rr[1]], [fr[0], fr[1]], [fl[0], fl[1]]])
+    return vertices
+
+@njit(cache=True)
+def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
+    vertices = get_vertices(np_state, length, width)
+    xmin = min(vertices[0][0], vertices[1][0], vertices[2][0], vertices[3][0])
+    xmax = max(vertices[0][0], vertices[1][0], vertices[2][0], vertices[3][0])
+    ymin = min(vertices[0][1], vertices[1][2], vertices[2][1], vertices[3][1])
+    ymax = max(vertices[0][1], vertices[1][2], vertices[2][1], vertices[3][1])
+
+    xmin = discretize(latched_map.shape[0], map_subdiv, xmin)
+    xmax = discretize(latched_map.shape[0], map_subdiv, xmax)
+    ymin = discretize(latched_map.shape[1], map_subdiv, ymin)
+    ymax = discretize(latched_map.shape[1], map_subdiv, ymax)
+
+    for x in range(xmin, xmax + 1):
+        for y in range(ymin, ymax + 1):
+            if latched_map[x, y]:
+                return False
+    return True
+
+def fast_state_propagate(np_state, steer, vel, duration):
+    pass
