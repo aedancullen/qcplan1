@@ -80,14 +80,14 @@ class QCPlan1:
             print("====>", "Biasmap loaded from disk")
         except:
             self.biasmap = np.zeros((
-                round(x_m * BIASMAP_XY_SUBDIV) + 1,
-                round(y_m * BIASMAP_XY_SUBDIV) + 1,
+                round(self.gridmap.shape[0] / GRIDMAP_XY_SUBDIV * BIASMAP_XY_SUBDIV) + 1,
+                round(self.gridmap.shape[1] / GRIDMAP_XY_SUBDIV * BIASMAP_XY_SUBDIV) + 1,
                 BIASMAP_YAW_SUBDIV + 1,
                 NUM_CONTROLS,
             ), dtype=np.float32)
             self.biasmap_valid = np.zeros((
-                round(x_m * BIASMAP_XY_SUBDIV) + 1,
-                round(y_m * BIASMAP_XY_SUBDIV) + 1,
+                round(self.gridmap.shape[0] / GRIDMAP_XY_SUBDIV * BIASMAP_XY_SUBDIV) + 1,
+                round(self.gridmap.shape[1] / GRIDMAP_XY_SUBDIV * BIASMAP_XY_SUBDIV) + 1,
                 BIASMAP_YAW_SUBDIV + 1,
             ), dtype=bool)
             print("====>", "Biasmap created fresh")
