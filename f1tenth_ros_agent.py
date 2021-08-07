@@ -22,14 +22,14 @@ CONTROL_UPPER = [PARAMS["s_max"], PARAMS["v_max"]]
 
 GRIDMAP_XY_SUBDIV = 10
 
-BIASMAP_XY_SUBDIV = 5
-BIASMAP_YAW_SUBDIV = 5
+BIASMAP_XY_SUBDIV = 1
+BIASMAP_YAW_SUBDIV = 10
 BIASMAP_CONTROL_STDEV = [(CONTROL_UPPER[i] - CONTROL_LOWER[i]) / 10 for i in range(NUM_CONTROLS)]
 
 PHYSICS_TIMESTEP = 0.01 # Actual value used in calculation
 SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbacks
 
-CHUNK_MULTIPLIER = 20
+CHUNK_MULTIPLIER = 10
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 5
@@ -69,7 +69,7 @@ class QCPlan1:
         self.hardware_map = hardware_map
         
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
-        self.gridmap = np.zeros((1000, 1000), dtype=bool)#np.load(gridmap_fn)
+        self.gridmap = np.zeros((1000, 1000), dtype=np.float32)#np.load(gridmap_fn)
         x_m = 50
         y_m = 50
         self.biasmap_fn = biasmap_fn
@@ -165,15 +165,15 @@ class QCPlan1:
         self.state_propagate(self.state(), self.last_control, physics_ticks_new, self.state())
 
         # Latch map
-        self.latched_map = self.gridmap.copy()
-        for i in range(len(self.hardware_map.scan.ranges)):
-            dist = self.hardware_map.scan.ranges[i]
-            angle = self.state()[0].getYaw() + self.hardware_map.scan.angle_min + i * self.hardware_map.scan.angle_increment
-            location_x = self.state()[0].getX() + dist * np.cos(angle)
-            location_y = self.state()[0].getY() + dist * np.sin(angle)
-            bi_x = util.discretize(self.latched_map.shape[0], GRIDMAP_XY_SUBDIV, location_x)
-            bi_y = util.discretize(self.latched_map.shape[1], GRIDMAP_XY_SUBDIV, location_y)
-            self.latched_map[bi_x, bi_y] = True
+        np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
+        self.latched_map = util.combine_scan(
+            np_state,
+            self.gridmap,
+            GRIDMAP_XY_SUBDIV,
+            np.array(self.hardware_map.scan.ranges),
+            self.hardware_map.scan.angle_min,
+            self.hardware_map.scan.angle_increment,
+        )
 
         # Predict future state if controls were issued
         future_state = ob.State(self.statespace)

@@ -299,19 +299,33 @@ def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
     vertices = get_vertices(np_state, length, width)
     xmin = min(vertices[0][0], vertices[1][0], vertices[2][0], vertices[3][0])
     xmax = max(vertices[0][0], vertices[1][0], vertices[2][0], vertices[3][0])
-    ymin = min(vertices[0][1], vertices[1][2], vertices[2][1], vertices[3][1])
-    ymax = max(vertices[0][1], vertices[1][2], vertices[2][1], vertices[3][1])
+    ymin = min(vertices[0][1], vertices[1][1], vertices[2][1], vertices[3][1])
+    ymax = max(vertices[0][1], vertices[1][1], vertices[2][1], vertices[3][1])
 
     xmin = discretize(latched_map.shape[0], map_subdiv, xmin)
     xmax = discretize(latched_map.shape[0], map_subdiv, xmax)
     ymin = discretize(latched_map.shape[1], map_subdiv, ymin)
     ymax = discretize(latched_map.shape[1], map_subdiv, ymax)
 
-    for x in range(xmin, xmax + 1):
-        for y in range(ymin, ymax + 1):
-            if latched_map[x, y]:
+    for x in range(xmin - 1, xmax + 2):
+        for y in range(ymin - 1, ymax + 2):
+            if latched_map[x, y] > 0.5:
                 return False
     return True
 
+@njit(cache=True)
 def fast_state_propagate(np_state, steer, vel, duration):
     pass
+
+@njit(cache=True)
+def combine_scan(np_state, gridmap, map_subdiv, ranges, angle_min, angle_increment):
+    latched_map = gridmap.copy()
+    for i in range(len(ranges)):
+        dist = ranges[i]
+        angle = np_state[2] + angle_min + i * angle_increment
+        location_x = np_state[0] + dist * np.cos(angle)
+        location_y = np_state[1] + dist * np.sin(angle)
+        bi_x = discretize(gridmap.shape[0], map_subdiv, location_x)
+        bi_y = discretize(gridmap.shape[1], map_subdiv, location_y)
+        latched_map[bi_x, bi_y] = 1
+    return latched_map
