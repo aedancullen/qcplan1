@@ -309,7 +309,7 @@ def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
 
     for x in range(xmin - 1, xmax + 2):
         for y in range(ymin - 1, ymax + 2):
-            if latched_map[x, y] > 0.5:
+            if latched_map[x, y] > 0:
                 return False
     return True
 

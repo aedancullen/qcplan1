@@ -20,7 +20,7 @@ NUM_CONTROLS = 2
 CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
 CONTROL_UPPER = [PARAMS["s_max"], PARAMS["v_max"]]
 
-GRIDMAP_XY_SUBDIV = 10
+GRIDMAP_XY_SUBDIV = 1/0.07712
 
 BIASMAP_XY_SUBDIV = 1
 BIASMAP_YAW_SUBDIV = 10
@@ -34,6 +34,7 @@ CHUNK_MULTIPLIER = 10
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 5
 GOAL_THRESHOLD = 2
+MIN_PLAN_LENGTH = 3
 
 class BiasmapControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, biasmap, biasmap_valid):
@@ -69,7 +70,7 @@ class QCPlan1:
         self.hardware_map = hardware_map
         
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
-        self.gridmap = np.zeros((1000, 1000), dtype=np.float32)#np.load(gridmap_fn)
+        self.gridmap = np.load(gridmap_fn)
         x_m = 50
         y_m = 50
         self.biasmap_fn = biasmap_fn
@@ -213,9 +214,14 @@ class QCPlan1:
                 for c in range(NUM_CONTROLS):
                     self.biasmap[bi_x, bi_y, bi_yaw, c] = n_control[c]
                 self.biasmap_valid[bi_x, bi_y, bi_yaw] = True
-
-            self.control = [controls[0][0], controls[0][1]]
-            print("====>", count, self.control)
+            if count < MIN_PLAN_LENGTH:
+                self.control = [controls[0][0], 0]
+                print("====>", "Short plan, braking")
+                #np.save(os.path.abspath(os.path.dirname(__file__)) + "/saved_map.npy", self.latched_map)
+                #timer.shutdowm()
+            else:
+                self.control = [controls[0][0], controls[0][1]]
+                print("====>", count, self.control)
         else:
             print("====>", "Not solved, zeroing controls")
             self.control = [0, 0]
