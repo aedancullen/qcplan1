@@ -2,9 +2,11 @@
 import os
 
 import rospy
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
 from f1tenth_gym_ros.msg import RaceInfo
+from tf.transformations import euler_from_quaternion
 
 import numpy as np
 from ompl import util as ou
@@ -24,7 +26,7 @@ GRIDMAP_XY_SUBDIV = 1/0.07712
 
 BIASMAP_XY_SUBDIV = 1
 BIASMAP_YAW_SUBDIV = 10
-BIASMAP_CONTROL_STDEV = [(CONTROL_UPPER[i] - CONTROL_LOWER[i]) / 10 for i in range(NUM_CONTROLS)]
+BIASMAP_CONTROL_STDEV = [(CONTROL_UPPER[i] - CONTROL_LOWER[i]) / 5 for i in range(NUM_CONTROLS)]
 
 PHYSICS_TIMESTEP = 0.01 # Actual value used in calculation
 SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbacks
@@ -71,8 +73,6 @@ class QCPlan1:
         
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
         self.gridmap = np.load(gridmap_fn)
-        x_m = 50
-        y_m = 50
         self.biasmap_fn = biasmap_fn
         try:
             biasmap_data = np.load(biasmap_fn)
@@ -127,7 +127,6 @@ class QCPlan1:
         self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
         self.control = None
-        self.latched_map = None
 
         print("====>", "Waiting for hardware map")
         while not hardware_map.ready():
@@ -156,24 +155,41 @@ class QCPlan1:
         np.savez(self.biasmap_fn, biasmap=self.biasmap, biasmap_valid=self.biasmap_valid)
 
     def loop(self, timer):
+        start = rospy.get_time()
+
         if self.control is not None:
             self.hardware_map.drive(self.control[0], self.control[1])
+
+        odom_captured = self.hardware_map.odom
+        scan_captured = self.hardware_map.scan
 
         # Update real state
         physics_ticks_elapsed = round(self.hardware_map.race_info.ego_elapsed_time / PHYSICS_TIMESTEP)
         physics_ticks_new = physics_ticks_elapsed - self.last_physics_ticks_elapsed
         self.last_physics_ticks_elapsed = physics_ticks_elapsed
         self.state_propagate(self.state(), self.last_control, physics_ticks_new, self.state())
+        self.state()[0].setX(odom_captured.pose.pose.position.x)
+        self.state()[0].setY(odom_captured.pose.pose.position.y)
+        x, y, z = euler_from_quaternion([
+            odom_captured.pose.pose.orientation.x,
+            odom_captured.pose.pose.orientation.y,
+            odom_captured.pose.pose.orientation.z,
+            odom_captured.pose.pose.orientation.w,
+        ])
+        self.state()[0].setYaw(z)
+        self.state()[1][1] = odom_captured.twist.twist.linear.x
+        self.state()[1][2] = odom_captured.twist.twist.angular.z
 
         # Latch map
         np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
-        self.latched_map = util.combine_scan(
+        self.latched_map = self.gridmap.copy()
+        util.combine_scan(
             np_state,
-            self.gridmap,
+            self.latched_map,
             GRIDMAP_XY_SUBDIV,
-            np.array(self.hardware_map.scan.ranges),
-            self.hardware_map.scan.angle_min,
-            self.hardware_map.scan.angle_increment,
+            np.array(scan_captured.ranges),
+            scan_captured.angle_min,
+            scan_captured.angle_increment,
         )
 
         # Predict future state if controls were issued
@@ -225,6 +241,8 @@ class QCPlan1:
         else:
             print("====>", "Not solved, zeroing controls")
             self.control = [0, 0]
+
+        #print(rospy.get_time() - start)
 
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
@@ -306,12 +324,17 @@ class QCPlan1:
 
 class HardwareMap:
     def __init__(self):
+        self.odom = None
         self.scan = None
         self.race_info = None
 
+        self.odom_sub = rospy.Subscriber("/%s/odom" % agent_name, Odometry, self.odom_callback, queue_size=1)
         self.scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, self.scan_callback, queue_size=1)
         self.race_info_sub = rospy.Subscriber("/race_info", RaceInfo, self.race_info_callback, queue_size=1)
         self.drive_pub = rospy.Publisher("/%s/drive" % agent_name, AckermannDriveStamped, queue_size=1)
+
+    def odom_callback(self, odom):
+        self.odom = odom
 
     def scan_callback(self, scan):
         self.scan = scan
@@ -326,7 +349,7 @@ class HardwareMap:
         self.drive_pub.publish(msg)
         
     def ready(self):
-        return self.scan is not None and self.race_info is not None
+        return self.scan is not None and self.race_info is not None and self.odom is not None
 
 if __name__ == "__main__":
     agent_name = os.environ.get("F1TENTH_AGENT_NAME")

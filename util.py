@@ -3,7 +3,7 @@ from numba import njit
 
 PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def nearest_point_on_trajectory(point, trajectory):
     '''
     Return the nearest point along the given piecewise linear trajectory.
@@ -34,7 +34,7 @@ def nearest_point_on_trajectory(point, trajectory):
     min_dist_segment = np.argmin(dists)
     return projections[min_dist_segment], dists[min_dist_segment], t[min_dist_segment], min_dist_segment
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def walk_along_trajectory(trajectory, t, i, distance):
     iplus = i + 1
     if iplus == trajectory.shape[0]:
@@ -309,7 +309,7 @@ def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
 
     for x in range(xmin - 1, xmax + 2):
         for y in range(ymin - 1, ymax + 2):
-            if latched_map[x, y] > 0:
+            if latched_map[x, y] >= 128:
                 return False
     return True
 
@@ -318,14 +318,12 @@ def fast_state_propagate(np_state, steer, vel, duration):
     pass
 
 @njit(cache=True)
-def combine_scan(np_state, gridmap, map_subdiv, ranges, angle_min, angle_increment):
-    latched_map = gridmap.copy()
+def combine_scan(np_state, latched_map, map_subdiv, ranges, angle_min, angle_increment):
     for i in range(len(ranges)):
         dist = ranges[i]
         angle = np_state[2] + angle_min + i * angle_increment
         location_x = np_state[0] + dist * np.cos(angle)
         location_y = np_state[1] + dist * np.sin(angle)
-        bi_x = discretize(gridmap.shape[0], map_subdiv, location_x)
-        bi_y = discretize(gridmap.shape[1], map_subdiv, location_y)
-        latched_map[bi_x, bi_y] = 1
-    return latched_map
+        bi_x = discretize(latched_map.shape[0], map_subdiv, location_x)
+        bi_y = discretize(latched_map.shape[1], map_subdiv, location_y)
+        latched_map[bi_x, bi_y] = 255

@@ -4,11 +4,11 @@ from PIL import Image
 import yaml
 
 map_img = np.array(Image.open("map_source.png").transpose(Image.ROTATE_270))
-map_img = map_img.astype(np.float32)
+map_img = map_img.astype(np.uint8)
 
 # grayscale -> binary
-map_img[map_img <= 128.] = 0.5
-map_img[map_img > 128.] = -0.5
+map_img[map_img <= 128.] = 128
+map_img[map_img > 128.] = 0
 
 map_height = map_img.shape[0]
 map_width = map_img.shape[1]
@@ -34,7 +34,7 @@ orig_y_px = round(np.abs(orig_y) * 1/map_resolution)
 xdim = max(orig_x_px, map_height - orig_x_px)
 ydim = max(orig_y_px, map_width - orig_y_px)
 
-pmap = np.zeros((xdim * 2, ydim * 2), dtype=np.float32)
+pmap = np.zeros((xdim * 2, ydim * 2), dtype=np.uint8)
 
 start_x = xdim - orig_x_px
 start_y = ydim - orig_y_px
