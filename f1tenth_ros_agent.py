@@ -26,7 +26,7 @@ GRIDMAP_XY_SUBDIV = 1/0.07712
 
 BIASMAP_XY_SUBDIV = 1
 BIASMAP_YAW_SUBDIV = 10
-BIASMAP_CONTROL_STDEV = [(CONTROL_UPPER[i] - CONTROL_LOWER[i]) / 5 for i in range(NUM_CONTROLS)]
+BIASMAP_CONTROL_STDEV = [(CONTROL_UPPER[i] - CONTROL_LOWER[i]) / 10 for i in range(NUM_CONTROLS)]
 
 PHYSICS_TIMESTEP = 0.01 # Actual value used in calculation
 SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbacks
@@ -36,7 +36,6 @@ CHUNK_MULTIPLIER = 10
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 5
 GOAL_THRESHOLD = 2
-MIN_PLAN_LENGTH = 3
 
 class BiasmapControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, biasmap, biasmap_valid):
@@ -70,8 +69,7 @@ class BiasmapControlSampler(oc.ControlSampler):
 class QCPlan1:
     def __init__(self, hardware_map, waypoints_fn, gridmap_fn, biasmap_fn):
         self.hardware_map = hardware_map
-        
-        self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
+
         self.gridmap = np.load(gridmap_fn)
         self.biasmap_fn = biasmap_fn
         try:
@@ -92,15 +90,19 @@ class QCPlan1:
                 BIASMAP_YAW_SUBDIV + 1,
             ), dtype=bool)
             print("====>", "Biasmap created fresh")
+        self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
+        self.waypoints[:, 0] -= self.gridmap.shape[0] / 2
+        self.waypoints[:, 1] -= self.gridmap.shape[1] / 2
+        self.waypoints /= GRIDMAP_XY_SUBDIV
 
         self.se2space = ob.SE2StateSpace()
         self.se2space.setSubspaceWeight(0, 1) # R^2 subspace weight 1
         self.se2space.setSubspaceWeight(1, 0) # SO(2) subspace weight 0
         self.vectorspace = ob.RealVectorStateSpace(6)
-        bounds = ob.RealVectorBounds(6)
-        bounds.setLow(-99999) # don't care
-        bounds.setHigh(99999)
-        self.vectorspace.setBounds(bounds)
+        self.vectorbounds = ob.RealVectorBounds(6)
+        self.vectorbounds.setLow(-99999) # don't care
+        self.vectorbounds.setHigh(99999)
+        self.vectorspace.setBounds(self.vectorbounds)
 
         self.statespace = ob.CompoundStateSpace()
         self.statespace.addSubspace(self.se2space, 1) # weight 1
@@ -116,11 +118,6 @@ class QCPlan1:
         self.si = self.ss.getSpaceInformation()
         self.si.setPropagationStepSize(CHUNK_MULTIPLIER)
         self.si.setMinMaxControlDuration(1, 1)
-
-        self.planner = oc.SST(self.si)
-        self.planner.setPruningRadius(0.01) # tenth of default
-        self.planner.setSelectionRadius(0.02) # tenth of default
-        self.ss.setPlanner(self.planner)
 
         #========
 
@@ -155,8 +152,6 @@ class QCPlan1:
         np.savez(self.biasmap_fn, biasmap=self.biasmap, biasmap_valid=self.biasmap_valid)
 
     def loop(self, timer):
-        start = rospy.get_time()
-
         if self.control is not None:
             self.hardware_map.drive(self.control[0], self.control[1])
 
@@ -179,6 +174,7 @@ class QCPlan1:
         self.state()[0].setYaw(z)
         self.state()[1][1] = odom_captured.twist.twist.linear.x
         self.state()[1][2] = odom_captured.twist.twist.angular.z
+        self.statespace.enforceBounds(self.state())
 
         # Latch map
         np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
@@ -194,10 +190,11 @@ class QCPlan1:
 
         # Predict future state if controls were issued
         future_state = ob.State(self.statespace)
-        self.statespace.copyState(future_state(), self.state())
         if self.control is not None:
             self.state_propagate(self.state(), self.control, CHUNK_MULTIPLIER, future_state())
             self.last_control = self.control
+        else:
+            self.statespace.copyState(future_state(), self.state())
 
         # Plan from future state
         self.ss.clear()
@@ -209,14 +206,18 @@ class QCPlan1:
         goal()[0].setX(goal_point[0])
         goal()[0].setY(goal_point[1])
         self.ss.setGoalState(goal, GOAL_THRESHOLD)
-        bounds = ob.RealVectorBounds(2)
-        bounds.setLow(0, min(goal_point[0], start_point[0]) - CHUNK_DISTANCE)
-        bounds.setLow(1, min(goal_point[1], start_point[1]) - CHUNK_DISTANCE)
-        bounds.setHigh(0, max(goal_point[0], start_point[0]) + CHUNK_DISTANCE)
-        bounds.setHigh(1, max(goal_point[1], start_point[1]) + CHUNK_DISTANCE)
-        self.se2space.setBounds(bounds)
+        self.se2bounds = ob.RealVectorBounds(2)
+        self.se2bounds.setLow(0, min(goal_point[0], start_point[0]) - CHUNK_DISTANCE)
+        self.se2bounds.setLow(1, min(goal_point[1], start_point[1]) - CHUNK_DISTANCE)
+        self.se2bounds.setHigh(0, max(goal_point[0], start_point[0]) + CHUNK_DISTANCE)
+        self.se2bounds.setHigh(1, max(goal_point[1], start_point[1]) + CHUNK_DISTANCE)
+        self.se2space.setBounds(self.se2bounds)
+        self.planner = oc.SST(self.si)
+        self.planner.setPruningRadius(0.01) # tenth of default
+        self.planner.setSelectionRadius(0.02) # tenth of default
+        self.ss.setPlanner(self.planner)
         solved = self.ss.solve(CHUNK_DURATION - 0.010)
-        if solved:
+        if self.ss.haveExactSolutionPath():
             solution = self.ss.getSolutionPath()
             controls = solution.getControls()
             states = solution.getStates()
@@ -229,20 +230,12 @@ class QCPlan1:
                 bi_yaw = util.discretize(self.biasmap.shape[2], BIASMAP_YAW_SUBDIV, n_state[0].getYaw() / (2 * np.pi))
                 for c in range(NUM_CONTROLS):
                     self.biasmap[bi_x, bi_y, bi_yaw, c] = n_control[c]
-                self.biasmap_valid[bi_x, bi_y, bi_yaw] = True
-            if count < MIN_PLAN_LENGTH:
-                self.control = [controls[0][0], 0]
-                print("====>", "Short plan, braking")
-                #np.save(os.path.abspath(os.path.dirname(__file__)) + "/saved_map.npy", self.latched_map)
-                #timer.shutdowm()
-            else:
-                self.control = [controls[0][0], controls[0][1]]
-                print("====>", count, self.control)
+                self.biasmap_valid[bi_x, bi_y, bi_yaw] = False
+            self.control = [controls[0][0], controls[0][1]]
+            print("====>", count, self.control)
         else:
-            print("====>", "Not solved, zeroing controls")
             self.control = [0, 0]
-
-        #print(rospy.get_time() - start)
+            print("====>", "No complete solution")
 
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
@@ -262,7 +255,7 @@ class QCPlan1:
             start[1][1],
             start[0].getYaw(),
             start[1][2],
-            start[1][3], # start[1][4], start[1][5]
+            start[1][3],
         ])
 
         steer = start[1][5]
@@ -278,7 +271,7 @@ class QCPlan1:
 
             # steering angle velocity input to steering velocity acceleration input
             accl, sv = util.pid(vel, steer, np_state[3], np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
-            
+
             # update physics, get RHS of diff'eq
             f = util.vehicle_dynamics_st(
                 np_state,
@@ -302,11 +295,11 @@ class QCPlan1:
 
             # update state
             np_state = np_state + f * PHYSICS_TIMESTEP
-                
+
             steer = steer0
             steer0 = control[0]
             vel = control[1]
-        
+
         state[0].setX(np_state[0])
         state[0].setY(np_state[1])
         state[0].setYaw(np_state[4])
@@ -316,7 +309,7 @@ class QCPlan1:
         state[1][3] = np_state[6]
         state[1][4] = steer0
         state[1][5] = steer
-        
+
         self.statespace.enforceBounds(state)
 
     def csampler_alloc(self, control_space):
