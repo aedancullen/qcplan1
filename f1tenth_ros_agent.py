@@ -24,10 +24,6 @@ CONTROL_UPPER = [PARAMS["s_max"], PARAMS["v_max"]]
 
 GRIDMAP_XY_SUBDIV = 1/0.07712
 
-BIASMAP_XY_SUBDIV = 1
-BIASMAP_YAW_SUBDIV = 10
-BIASMAP_CONTROL_STDEV = [(CONTROL_UPPER[i] - CONTROL_LOWER[i]) / 10 for i in range(NUM_CONTROLS)]
-
 PHYSICS_TIMESTEP = 0.01 # Actual value used in calculation
 SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbacks
 
@@ -37,59 +33,21 @@ CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 5
 GOAL_THRESHOLD = 2
 
-class BiasmapControlSampler(oc.ControlSampler):
-    def __init__(self, controlspace, biasmap, biasmap_valid):
+class QCPassControlSampler(oc.ControlSampler):
+    def __init__(self, controlspace, latched_map, goal_state):
         super().__init__(controlspace)
-        self.controlspace = controlspace
-        self.biasmap = biasmap
-        self.biasmap_valid = biasmap_valid
-        self.exact_flags = np.ones_like(biasmap, dtype=bool)
+        self.latched_map = latched_map
+        self.goal_state = goal_state
 
     def sample(self, control, start_state):
-        bi_x = util.discretize(self.biasmap.shape[0], BIASMAP_XY_SUBDIV, start_state[0].getX())
-        bi_y = util.discretize(self.biasmap.shape[1], BIASMAP_XY_SUBDIV, start_state[0].getY())
-        bi_yaw = util.discretize(self.biasmap.shape[2], BIASMAP_YAW_SUBDIV, start_state[0].getYaw() / (2 * np.pi))
-        result_data = self.biasmap[bi_x, bi_y, bi_yaw, :]
-        result_valid = self.biasmap_valid[bi_x, bi_y, bi_yaw]
-        result_exact = self.exact_flags[bi_x, bi_y, bi_yaw, :]
-        if result_valid:
-            if result_exact[0]:
-                result_exact[0] = False
-                for i in range(NUM_CONTROLS):
-                    control[i] = np.clip(result_data[i], CONTROL_LOWER[i], CONTROL_UPPER[i])
-            else:
-                for i in range(NUM_CONTROLS):
-                    cvalue = np.random.normal(result_data[i], BIASMAP_CONTROL_STDEV[i])
-                    cvalue = np.clip(cvalue, CONTROL_LOWER[i], CONTROL_UPPER[i])
-                    control[i] = cvalue
-        else:
-            for i in range(NUM_CONTROLS):
-                control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
+        for i in range(NUM_CONTROLS):
+            control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
 
 class QCPlan1:
-    def __init__(self, hardware_map, waypoints_fn, gridmap_fn, biasmap_fn):
+    def __init__(self, hardware_map, waypoints_fn, gridmap_fn):
         self.hardware_map = hardware_map
 
         self.gridmap = np.load(gridmap_fn)
-        self.biasmap_fn = biasmap_fn
-        try:
-            biasmap_data = np.load(biasmap_fn)
-            self.biasmap = biasmap_data["biasmap"]
-            self.biasmap_valid = biasmap_data["biasmap_valid"]
-            print("====>", "Biasmap loaded from disk")
-        except:
-            self.biasmap = np.zeros((
-                round(self.gridmap.shape[0] / GRIDMAP_XY_SUBDIV * BIASMAP_XY_SUBDIV) + 1,
-                round(self.gridmap.shape[1] / GRIDMAP_XY_SUBDIV * BIASMAP_XY_SUBDIV) + 1,
-                BIASMAP_YAW_SUBDIV + 1,
-                NUM_CONTROLS,
-            ), dtype=np.float32)
-            self.biasmap_valid = np.zeros((
-                round(self.gridmap.shape[0] / GRIDMAP_XY_SUBDIV * BIASMAP_XY_SUBDIV) + 1,
-                round(self.gridmap.shape[1] / GRIDMAP_XY_SUBDIV * BIASMAP_XY_SUBDIV) + 1,
-                BIASMAP_YAW_SUBDIV + 1,
-            ), dtype=bool)
-            print("====>", "Biasmap created fresh")
         self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
         self.waypoints[:, 0] -= self.gridmap.shape[0] / 2
         self.waypoints[:, 1] -= self.gridmap.shape[1] / 2
@@ -126,12 +84,12 @@ class QCPlan1:
         self.control = None
 
         print("====>", "Waiting for hardware map")
-        while not hardware_map.ready():
+        while not self.hardware_map.ready():
             rospy.sleep(0.001)
         
         self.state = ob.State(self.statespace)
         state = self.state()
-        if hardware_map.scan.header.frame_id.startswith("ego"):
+        if self.hardware_map.scan.header.frame_id.startswith("ego"):
             i = 0
             print("====>", "Identity is ego")
         else:
@@ -146,10 +104,6 @@ class QCPlan1:
         state[1][3] = 0
         state[1][4] = 0
         state[1][5] = 0
-        
-    def shutdown(self):
-        print("====>", "Saving biasmap to disk")
-        np.savez(self.biasmap_fn, biasmap=self.biasmap, biasmap_valid=self.biasmap_valid)
 
     def loop(self, timer):
         if self.control is not None:
@@ -202,10 +156,10 @@ class QCPlan1:
         start_point = np.array([future_state()[0].getX(), future_state()[0].getY()], dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
         goal_point, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
-        goal = ob.State(self.statespace)
-        goal()[0].setX(goal_point[0])
-        goal()[0].setY(goal_point[1])
-        self.ss.setGoalState(goal, GOAL_THRESHOLD)
+        self.goal_state = ob.State(self.statespace)
+        self.goal_state()[0].setX(goal_point[0])
+        self.goal_state()[0].setY(goal_point[1])
+        self.ss.setGoalState(self.goal_state, GOAL_THRESHOLD)
         self.se2bounds = ob.RealVectorBounds(2)
         self.se2bounds.setLow(0, min(goal_point[0], start_point[0]) - CHUNK_DISTANCE)
         self.se2bounds.setLow(1, min(goal_point[1], start_point[1]) - CHUNK_DISTANCE)
@@ -222,15 +176,6 @@ class QCPlan1:
             controls = solution.getControls()
             states = solution.getStates()
             count = solution.getControlCount()
-            for i in range(count):
-                n_state = states[i]
-                n_control = controls[i]
-                bi_x = util.discretize(self.biasmap.shape[0], BIASMAP_XY_SUBDIV, n_state[0].getX())
-                bi_y = util.discretize(self.biasmap.shape[1], BIASMAP_XY_SUBDIV, n_state[0].getY())
-                bi_yaw = util.discretize(self.biasmap.shape[2], BIASMAP_YAW_SUBDIV, n_state[0].getYaw() / (2 * np.pi))
-                for c in range(NUM_CONTROLS):
-                    self.biasmap[bi_x, bi_y, bi_yaw, c] = n_control[c]
-                self.biasmap_valid[bi_x, bi_y, bi_yaw] = False
             self.control = [controls[0][0], controls[0][1]]
             print("====>", count, self.control)
         else:
@@ -313,7 +258,7 @@ class QCPlan1:
         self.statespace.enforceBounds(state)
 
     def csampler_alloc(self, control_space):
-        return BiasmapControlSampler(control_space, self.biasmap, self.biasmap_valid)
+        return QCPassControlSampler(control_space, self.latched_map, self.goal_state)
 
 class HardwareMap:
     def __init__(self):
@@ -352,7 +297,6 @@ if __name__ == "__main__":
     qc = QCPlan1(HardwareMap(),
         "%s/waypoints.csv" % filepath,
         "%s/gridmap.npy" % filepath,
-        "%s/biasmap.npz" % filepath,
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     rospy.spin()
