@@ -1,8 +1,6 @@
 import numpy as np
 from numba import njit
 
-PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
-
 @njit(cache=True)
 def nearest_point_on_trajectory(point, trajectory):
     '''
@@ -314,8 +312,70 @@ def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
     return True
 
 @njit(cache=True)
-def fast_state_propagate(np_state, steer, vel, duration):
-    pass
+def fast_state_propagate(np_state, steer0, steer, control, duration, physics_timestep,
+                         mu,
+                         C_Sf,
+                         C_Sr,
+                         lf,
+                         lr,
+                         h,
+                         m,
+                         I,
+                         s_min,
+                         s_max,
+                         sv_min,
+                         sv_max,
+                         v_switch,
+                         a_max,
+                         v_min,
+                         v_max):
+
+    vel = control[1]
+
+    for i in range(int(duration)):
+        # bound yaw angle
+        if np_state[4] > 2*np.pi:
+            np_state[4] = np_state[4] - 2*np.pi
+        elif np_state[4] < 0:
+            np_state[4] = np_state[4] + 2*np.pi
+
+        # steering angle velocity input to steering velocity acceleration input
+        accl, sv = pid(vel, steer, np_state[3], np_state[2], sv_max, a_max, v_max, v_min)
+
+        # update physics, get RHS of diff'eq
+        f = vehicle_dynamics_st(
+            np_state,
+            np.array([sv, accl]),
+            mu,
+            C_Sf,
+            C_Sr,
+            lf,
+            lr,
+            h,
+            m,
+            I,
+            s_min,
+            s_max,
+            sv_min,
+            sv_max,
+            v_switch,
+            a_max,
+            v_min,
+            v_max)
+
+        # update state
+        np_state = np_state + f * physics_timestep
+
+        steer = steer0
+        steer0 = control[0]
+
+    # bound yaw angle
+    if np_state[4] > 2*np.pi:
+        np_state[4] = np_state[4] - 2*np.pi
+    elif np_state[4] < 0:
+        np_state[4] = np_state[4] + 2*np.pi
+
+    return np_state, steer0, steer
 
 @njit(cache=True)
 def combine_scan(np_state, latched_map, map_subdiv, ranges, angle_min, angle_increment):

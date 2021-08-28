@@ -14,9 +14,10 @@ from ompl import base as ob
 from ompl import control as oc
 
 import util
-from util import PARAMS
 
 #ou.setLogLevel(ou.LOG_WARN)
+
+PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
 
 NUM_CONTROLS = 2
 CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
@@ -203,47 +204,35 @@ class QCPlan1:
             start[1][3],
         ])
 
-        steer = start[1][5]
         steer0 = start[1][4]
-        vel = control[1]
+        steer = start[1][5]
 
-        for i in range(int(duration)):
-            # bound yaw angle
-            if np_state[4] > 2*np.pi:
-                np_state[4] = np_state[4] - 2*np.pi
-            elif np_state[4] < 0:
-                np_state[4] = np_state[4] + 2*np.pi
+        control = np.array([control[0], control[1]])
 
-            # steering angle velocity input to steering velocity acceleration input
-            accl, sv = util.pid(vel, steer, np_state[3], np_state[2], PARAMS['sv_max'], PARAMS['a_max'], PARAMS['v_max'], PARAMS['v_min'])
-
-            # update physics, get RHS of diff'eq
-            f = util.vehicle_dynamics_st(
-                np_state,
-                np.array([sv, accl]),
-                PARAMS['mu'],
-                PARAMS['C_Sf'],
-                PARAMS['C_Sr'],
-                PARAMS['lf'],
-                PARAMS['lr'],
-                PARAMS['h'],
-                PARAMS['m'],
-                PARAMS['I'],
-                PARAMS['s_min'],
-                PARAMS['s_max'],
-                PARAMS['sv_min'],
-                PARAMS['sv_max'],
-                PARAMS['v_switch'],
-                PARAMS['a_max'],
-                PARAMS['v_min'],
-                PARAMS['v_max'])
-
-            # update state
-            np_state = np_state + f * PHYSICS_TIMESTEP
-
-            steer = steer0
-            steer0 = control[0]
-            vel = control[1]
+        np_state, steer0, steer = util.fast_state_propagate(
+            np_state,
+            steer0,
+            steer,
+            control,
+            duration,
+            PHYSICS_TIMESTEP,
+            PARAMS['mu'],
+            PARAMS['C_Sf'],
+            PARAMS['C_Sr'],
+            PARAMS['lf'],
+            PARAMS['lr'],
+            PARAMS['h'],
+            PARAMS['m'],
+            PARAMS['I'],
+            PARAMS['s_min'],
+            PARAMS['s_max'],
+            PARAMS['sv_min'],
+            PARAMS['sv_max'],
+            PARAMS['v_switch'],
+            PARAMS['a_max'],
+            PARAMS['v_min'],
+            PARAMS['v_max'],
+        )
 
         state[0].setX(np_state[0])
         state[0].setY(np_state[1])
