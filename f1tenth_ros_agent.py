@@ -31,7 +31,7 @@ SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbac
 CHUNK_MULTIPLIER = 10
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 5
+CHUNK_DISTANCE = 3
 GOAL_THRESHOLD = 2
 
 class QCPassControlSampler(oc.ControlSampler):
@@ -41,8 +41,20 @@ class QCPassControlSampler(oc.ControlSampler):
         self.goal_state = goal_state
 
     def sample(self, control, start_state):
-        for i in range(NUM_CONTROLS):
-            control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
+        #for i in range(NUM_CONTROLS):
+        #    control[i] = np.random.uniform(CONTROL_LOWER[i], CONTROL_UPPER[i])
+
+        goalx = self.goal_state[0].getX()
+        goaly = self.goal_state[0].getY()
+        startx = start_state[0].getX()
+        starty = start_state[0].getY()
+        c0mean = np.arctan2(goaly - starty, goalx - startx) - start_state[0].getYaw()
+        if c0mean < -np.pi:
+            c0mean += 2.0 * np.pi
+        elif c0mean >= np.pi:
+            c0mean -= 2.0 * np.pi
+        control[0] = np.clip(np.random.normal(c0mean, 0.1), CONTROL_LOWER[0], CONTROL_UPPER[0])
+        control[1] = np.random.uniform(CONTROL_LOWER[1], CONTROL_UPPER[1])
 
 class QCPlan1:
     def __init__(self, hardware_map, waypoints_fn, gridmap_fn):
@@ -55,8 +67,8 @@ class QCPlan1:
         self.waypoints /= GRIDMAP_XY_SUBDIV
 
         self.se2space = ob.SE2StateSpace()
-        self.se2space.setSubspaceWeight(0, 1) # R^2 subspace weight 1
-        self.se2space.setSubspaceWeight(1, 0) # SO(2) subspace weight 0
+        #self.se2space.setSubspaceWeight(0, 1) # R^2 subspace weight 1
+        #self.se2space.setSubspaceWeight(1, 0) # SO(2) subspace weight 0
         self.vectorspace = ob.RealVectorStateSpace(6)
         self.vectorbounds = ob.RealVectorBounds(6)
         self.vectorbounds.setLow(-99999) # don't care
@@ -156,10 +168,11 @@ class QCPlan1:
         self.ss.setStartState(future_state)
         start_point = np.array([future_state()[0].getX(), future_state()[0].getY()], dtype=np.float32)
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
-        goal_point, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
+        goal_point, goal_angle, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
         self.goal_state = ob.State(self.statespace)
         self.goal_state()[0].setX(goal_point[0])
         self.goal_state()[0].setY(goal_point[1])
+        self.goal_state()[0].setYaw(goal_angle)
         self.ss.setGoalState(self.goal_state, GOAL_THRESHOLD)
         self.se2bounds = ob.RealVectorBounds(2)
         self.se2bounds.setLow(0, min(goal_point[0], start_point[0]) - CHUNK_DISTANCE)
@@ -168,20 +181,24 @@ class QCPlan1:
         self.se2bounds.setHigh(1, max(goal_point[1], start_point[1]) + CHUNK_DISTANCE)
         self.se2space.setBounds(self.se2bounds)
         self.planner = oc.SST(self.si)
-        self.planner.setPruningRadius(0.01) # tenth of default
-        self.planner.setSelectionRadius(0.02) # tenth of default
+        #self.planner.setPruningRadius(0.01) # tenth of default
+        #self.planner.setSelectionRadius(0.02) # tenth of default
+        self.planner.setPruningRadius(0.00)
         self.ss.setPlanner(self.planner)
         solved = self.ss.solve(CHUNK_DURATION - 0.010)
-        if self.ss.haveExactSolutionPath():
+        if solved:
             solution = self.ss.getSolutionPath()
             controls = solution.getControls()
-            states = solution.getStates()
             count = solution.getControlCount()
-            self.control = [controls[0][0], controls[0][1]]
-            print("====>", count, self.control)
+            if self.ss.haveExactSolutionPath():
+                self.control = [controls[0][0], controls[0][1]]
+                print("====> Complete:", count, self.control)
+            else:
+                self.control = [controls[0][0], 0]
+                print("====> Incomplete:", count, self.control)
         else:
             self.control = [0, 0]
-            print("====>", "No complete solution")
+            print("====>", "Not solved")
 
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
@@ -247,7 +264,7 @@ class QCPlan1:
         self.statespace.enforceBounds(state)
 
     def csampler_alloc(self, control_space):
-        return QCPassControlSampler(control_space, self.latched_map, self.goal_state)
+        return QCPassControlSampler(control_space, self.latched_map, self.goal_state())
 
 class HardwareMap:
     def __init__(self):

@@ -45,11 +45,14 @@ def walk_along_trajectory(trajectory, t, i, distance):
         acc += np.linalg.norm(trajectory[i, :] - trajectory[i - 1, :])
     lenlast = np.linalg.norm(trajectory[i, :] - trajectory[i - 1, :])
     t_out = 1 - ((acc - distance) / lenlast)
-    point_out = trajectory[i - 1, :] + t_out * (trajectory[i, :] - trajectory[i - 1, :])
+    diff = trajectory[i, :] - trajectory[i - 1, :]
+    point_out = trajectory[i - 1, :] + t_out * diff
     i_out = i - 1
     if i_out == -1:
         i_out = trajectory.shape[0]
-    return point_out, t_out, i_out
+
+    angle_out = np.atan2(diff[1], diff[0])
+    return point_out, angle_out, t_out, i_out
 
 @njit(cache=True)
 def discretize(arrsize, subdiv, value):
