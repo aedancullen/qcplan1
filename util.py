@@ -51,7 +51,7 @@ def walk_along_trajectory(trajectory, t, i, distance):
     if i_out == -1:
         i_out = trajectory.shape[0]
 
-    angle_out = np.atan2(diff[1], diff[0])
+    angle_out = np.arctan2(diff[1], diff[0])
     return point_out, angle_out, t_out, i_out
 
 @njit(cache=True)

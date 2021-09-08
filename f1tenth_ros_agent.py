@@ -15,7 +15,7 @@ from ompl import control as oc
 
 import util
 
-#ou.setLogLevel(ou.LOG_WARN)
+ou.setLogLevel(ou.LOG_ERROR)
 
 PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
 
@@ -67,8 +67,6 @@ class QCPlan1:
         self.waypoints /= GRIDMAP_XY_SUBDIV
 
         self.se2space = ob.SE2StateSpace()
-        #self.se2space.setSubspaceWeight(0, 1) # R^2 subspace weight 1
-        #self.se2space.setSubspaceWeight(1, 0) # SO(2) subspace weight 0
         self.vectorspace = ob.RealVectorStateSpace(6)
         self.vectorbounds = ob.RealVectorBounds(6)
         self.vectorbounds.setLow(-99999) # don't care
@@ -175,10 +173,10 @@ class QCPlan1:
         self.goal_state()[0].setYaw(goal_angle)
         self.ss.setGoalState(self.goal_state, GOAL_THRESHOLD)
         self.se2bounds = ob.RealVectorBounds(2)
-        self.se2bounds.setLow(0, min(goal_point[0], start_point[0]) - CHUNK_DISTANCE)
-        self.se2bounds.setLow(1, min(goal_point[1], start_point[1]) - CHUNK_DISTANCE)
-        self.se2bounds.setHigh(0, max(goal_point[0], start_point[0]) + CHUNK_DISTANCE)
-        self.se2bounds.setHigh(1, max(goal_point[1], start_point[1]) + CHUNK_DISTANCE)
+        self.se2bounds.setLow(0, min(goal_point[0], start_point[0]) - CHUNK_DISTANCE / 2)
+        self.se2bounds.setLow(1, min(goal_point[1], start_point[1]) - CHUNK_DISTANCE / 2)
+        self.se2bounds.setHigh(0, max(goal_point[0], start_point[0]) + CHUNK_DISTANCE / 2)
+        self.se2bounds.setHigh(1, max(goal_point[1], start_point[1]) + CHUNK_DISTANCE / 2)
         self.se2space.setBounds(self.se2bounds)
         self.planner = oc.SST(self.si)
         #self.planner.setPruningRadius(0.01) # tenth of default
