@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import os
+import time
 
 import rospy
 from nav_msgs.msg import Odometry
@@ -90,6 +91,7 @@ class QCPlan1:
 
         #========
 
+        self.last_path = None
         self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
         self.control = None
@@ -117,6 +119,8 @@ class QCPlan1:
         state[1][5] = 0
 
     def loop(self, timer):
+        start = time.time()
+
         if self.control is not None:
             self.hardware_map.drive(self.control[0], self.control[1])
 
@@ -182,21 +186,26 @@ class QCPlan1:
         #self.planner.setPruningRadius(0.01) # tenth of default
         #self.planner.setSelectionRadius(0.02) # tenth of default
         self.planner.setPruningRadius(0.00)
+        if self.last_path is not None:
+            self.planner.setSeedPath(self.last_path, 1)
         self.ss.setPlanner(self.planner)
         solved = self.ss.solve(CHUNK_DURATION - 0.010)
+        print("====>", round((time.time() - start) * 1000), "ms, ", end='')
         if solved:
             solution = self.ss.getSolutionPath()
             controls = solution.getControls()
             count = solution.getControlCount()
             if self.ss.haveExactSolutionPath():
                 self.control = [controls[0][0], controls[0][1]]
-                print("====> Complete:", count, self.control)
+                print("complete:", count, self.control)
             else:
                 self.control = [controls[0][0], 0]
-                print("====> Incomplete:", count, self.control)
+                print("incomplete:", count, self.control)
+            self.last_path = solution
         else:
             self.control = [0, 0]
-            print("====>", "Not solved")
+            print("not solved")
+            self.last_path = None
 
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
