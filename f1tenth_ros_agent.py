@@ -16,7 +16,7 @@ from ompl import control as oc
 
 import util
 
-ou.setLogLevel(ou.LOG_ERROR)
+ou.setLogLevel(ou.LOG_INFO)
 
 PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
 
@@ -32,7 +32,7 @@ SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbac
 CHUNK_MULTIPLIER = 10
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 3
+CHUNK_DISTANCE = 10
 GOAL_THRESHOLD = 2
 
 class QCPassControlSampler(oc.ControlSampler):
@@ -54,7 +54,7 @@ class QCPassControlSampler(oc.ControlSampler):
             c0mean += 2.0 * np.pi
         elif c0mean >= np.pi:
             c0mean -= 2.0 * np.pi
-        control[0] = np.clip(np.random.normal(c0mean, 0.1), CONTROL_LOWER[0], CONTROL_UPPER[0])
+        control[0] = np.clip(np.random.normal(c0mean, 0.25), CONTROL_LOWER[0], CONTROL_UPPER[0])
         control[1] = np.random.uniform(CONTROL_LOWER[1], CONTROL_UPPER[1])
 
 class QCPlan1:
@@ -91,7 +91,6 @@ class QCPlan1:
 
         #========
 
-        self.last_path = None
         self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
         self.control = None
@@ -166,6 +165,17 @@ class QCPlan1:
             self.statespace.copyState(future_state(), self.state())
 
         # Plan from future state
+
+        self.planner = oc.SST(self.si)
+        #self.planner.setPruningRadius(0.01) # tenth of default
+        #self.planner.setSelectionRadius(0.02) # tenth of default
+        self.planner.setPruningRadius(0.00)
+        #self.planner.setSelectionRadius(0.00)
+        if self.ss.getLastPlannerStatus():
+            # Copy old path into a new PathControl because it will be freed on self.ss.clear()
+            seed_path = oc.PathControl(self.ss.getSolutionPath())
+            self.planner.setSeedPath(seed_path, 1)
+
         self.ss.clear()
         self.ss.setStartState(future_state)
         start_point = np.array([future_state()[0].getX(), future_state()[0].getY()], dtype=np.float32)
@@ -182,12 +192,7 @@ class QCPlan1:
         self.se2bounds.setHigh(0, max(goal_point[0], start_point[0]) + CHUNK_DISTANCE / 2)
         self.se2bounds.setHigh(1, max(goal_point[1], start_point[1]) + CHUNK_DISTANCE / 2)
         self.se2space.setBounds(self.se2bounds)
-        self.planner = oc.SST(self.si)
-        #self.planner.setPruningRadius(0.01) # tenth of default
-        #self.planner.setSelectionRadius(0.02) # tenth of default
-        self.planner.setPruningRadius(0.00)
-        if self.last_path is not None:
-            self.planner.setSeedPath(self.last_path, 1)
+
         self.ss.setPlanner(self.planner)
         solved = self.ss.solve(CHUNK_DURATION - 0.010)
         print("====>", round((time.time() - start) * 1000), "ms, ", end='')
