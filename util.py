@@ -296,6 +296,20 @@ def get_vertices(pose, length, width):
     return vertices
 
 @njit(cache=True)
+def fast_control_sample(np_state, latched_map, map_subdiv, goal_point, goal_angle):
+    dist = rangefind(latched_map, map_subdiv, start_point, goal_angle, goal_dist, step, width)
+    if dist < goal_dist:
+        l_last = dist
+        r_last = dist
+        sweep_angle_l = goal_angle
+        sweep_angle_r = goal_angle
+        while True:
+            sweep_angle_l += angle_step
+            sweep_angle_r -= angle_step
+            l_new = rangefind(latched_map, map_subdiv, start_point, sweep_angle_l, -1, step, width)
+            r_new = rangefind(latched_map, map_subdiv, start_point, sweep_angle_r, -1, step, width)
+
+@njit(cache=True)
 def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
     vertices = get_vertices(np_state, length, width)
     xmin = min(vertices[0][0], vertices[1][0], vertices[2][0], vertices[3][0])
