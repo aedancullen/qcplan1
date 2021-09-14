@@ -35,6 +35,9 @@ CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 10
 GOAL_THRESHOLD = 2
 
+DIRECTION_STEP = np.radians(1)
+CONT_THRESH = 0.5
+
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
         super().__init__(controlspace)
@@ -44,12 +47,15 @@ class QCPassControlSampler(oc.ControlSampler):
 
     def sample(self, control, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
-        control[0], control[1] = util.fast_control_sample(
+        target_dir = util.tangent_bug(
             np_state,
             self.latched_map,
             GRIDMAP_XY_SUBDIV,
             self.goal_point,
             self.goal_angle,
+            DIRECTION_STEP,
+            CONT_THRESH,
+            PARAMS["width"]
         )
 
 class QCPlan1:
@@ -57,7 +63,7 @@ class QCPlan1:
         self.hardware_map = hardware_map
 
         self.gridmap = np.load(gridmap_fn)
-        self.waypoints = np.loadtxt(waypoints_fn, delimiter=',', dtype=np.float32)
+        self.waypoints = np.loadtxt(waypoints_fn, delimiter=',')
         self.waypoints[:, 0] -= self.gridmap.shape[0] / 2
         self.waypoints[:, 1] -= self.gridmap.shape[1] / 2
         self.waypoints /= GRIDMAP_XY_SUBDIV
@@ -173,7 +179,7 @@ class QCPlan1:
 
         self.ss.clear()
         self.ss.setStartState(future_state)
-        start_point = np.array([future_state()[0].getX(), future_state()[0].getY()], dtype=np.float32)
+        start_point = np.array([future_state()[0].getX(), future_state()[0].getY()])
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
         self.goal_point, self.goal_angle, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
 
@@ -239,22 +245,22 @@ class QCPlan1:
             control,
             duration,
             PHYSICS_TIMESTEP,
-            PARAMS['mu'],
-            PARAMS['C_Sf'],
-            PARAMS['C_Sr'],
-            PARAMS['lf'],
-            PARAMS['lr'],
-            PARAMS['h'],
-            PARAMS['m'],
-            PARAMS['I'],
-            PARAMS['s_min'],
-            PARAMS['s_max'],
-            PARAMS['sv_min'],
-            PARAMS['sv_max'],
-            PARAMS['v_switch'],
-            PARAMS['a_max'],
-            PARAMS['v_min'],
-            PARAMS['v_max'],
+            PARAMS["mu"],
+            PARAMS["C_Sf"],
+            PARAMS["C_Sr"],
+            PARAMS["lf"],
+            PARAMS["lr"],
+            PARAMS["h"],
+            PARAMS["m"],
+            PARAMS["I"],
+            PARAMS["s_min"],
+            PARAMS["s_max"],
+            PARAMS["sv_min"],
+            PARAMS["sv_max"],
+            PARAMS["v_switch"],
+            PARAMS["a_max"],
+            PARAMS["v_min"],
+            PARAMS["v_max"],
         )
 
         state[0].setX(np_state[0])

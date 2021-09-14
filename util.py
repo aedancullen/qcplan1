@@ -296,18 +296,69 @@ def get_vertices(pose, length, width):
     return vertices
 
 @njit(cache=True)
-def fast_control_sample(np_state, latched_map, map_subdiv, goal_point, goal_angle):
-    dist = rangefind(latched_map, map_subdiv, start_point, goal_angle, goal_dist, step, width)
+def rangefind(np_state, latched_map, map_subdiv, direction, max_dist, width):
+    step = 1 / map_subdiv
+    cos_step = np.cos(direction) * step
+    sin_step = np.sin(direction) * step
+    cos_step_perp = np.cos(direction + np.pi / 2) * step
+    sin_step_perp = np.sin(direction + np.pi / 2) * step
+    trans_x = np_state[0]
+    trans_y = np_state[1]
+    dist = 0
+    while dist < max_dist:
+        trans_x += cos_step
+        trans_y += sin_step
+        dist += step
+        trans_x_perp = 0
+        trans_y_perp = 0
+        dist_perp = 0
+        while dist_perp < width / 2:
+            trans_x_perp += cos_step_perp
+            trans_y_perp += sin_step_perp
+            dist_perp += step
+            x1 = discretize(latched_map.shape[0], map_subdiv, trans_x + trans_x_perp);
+            y1 = discretize(latched_map.shape[1], map_subdiv, trans_y + trans_y_perp);
+            x2 = discretize(latched_map.shape[0], map_subdiv, trans_x - trans_x_perp);
+            y2 = discretize(latched_map.shape[1], map_subdiv, trans_y - trans_y_perp);
+            if latched_map[x1, y1] >= 128 or latched_map[x2, y2] >= 128:
+                return dist
+    return max_dist
+
+@njit(cache=True)
+def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direction_step, cont_thresh, width):
+    goal_direction = np.arctan2(goal_point[1] - np_state[1], goal_point[0] - np_state[0])
+    dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist, width)
+    out = goal_direction
     if dist < goal_dist:
         l_last = dist
         r_last = dist
-        sweep_angle_l = goal_angle
-        sweep_angle_r = goal_angle
-        while True:
-            sweep_angle_l += angle_step
-            sweep_angle_r -= angle_step
-            l_new = rangefind(latched_map, map_subdiv, start_point, sweep_angle_l, -1, step, width)
-            r_new = rangefind(latched_map, map_subdiv, start_point, sweep_angle_r, -1, step, width)
+        sweep_angle_l = goal_direction
+        sweep_angle_r = goal_direction
+        for i in range(round(np.pi / direction_step)):
+            sweep_direction_l += direction_step
+            sweep_direction_r -= direction_step
+            l_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_l, goal_dist * 2, width)
+            r_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_r, goal_dist * 2, width)
+            if l_new - l_last > cont_thresh: # went farther
+                out = sweep_direction_l
+                break
+            if l_last - l_new > cont_thresh: # came nearer; backtrack
+                out = sweep_direction_l -= direction_step
+                break
+            if r_new - r_last > cont_thresh: # went farther
+                out = sweep_direction_r
+                break
+            if r_last - r_new > cont_thresh: # came nearer; backtrack
+                out = sweep_direction_r += direction_step
+                break
+            l_last = l_new
+            r_last = r_new
+
+    if out < -np.pi:
+        out = out + 2*np.pi
+    elif out >= np.pi:
+        out = out - 2*np.pi
+    return out
 
 @njit(cache=True)
 def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
