@@ -36,7 +36,7 @@ CHUNK_DISTANCE = 10
 GOAL_THRESHOLD = 2
 
 TANGENT_DIRECTION_STEP = np.radians(1)
-TANGENT_CONT_THRESH = 0.5
+TANGENT_CONT_THRESH = 2
 TANGENT_GAIN = 0.25
 
 class QCPassControlSampler(oc.ControlSampler):
@@ -67,7 +67,7 @@ class QCPassControlSampler(oc.ControlSampler):
             steer_dir = steer_dir - 2*np.pi
 
         control[0] = np.clip(steer_dir * TANGENT_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0])
-        control[1] = 20
+        control[1] = 5
 
 class QCPlan1:
     def __init__(self, hardware_map, waypoints_fn, gridmap_fn):
@@ -200,28 +200,32 @@ class QCPlan1:
         self.goal_state()[0].setYaw(self.goal_angle)
         self.ss.setGoalState(self.goal_state, GOAL_THRESHOLD)
         self.se2bounds = ob.RealVectorBounds(2)
-        self.se2bounds.setLow(0, min(goal_point[0], start_point[0]) - CHUNK_DISTANCE / 2)
-        self.se2bounds.setLow(1, min(goal_point[1], start_point[1]) - CHUNK_DISTANCE / 2)
-        self.se2bounds.setHigh(0, max(goal_point[0], start_point[0]) + CHUNK_DISTANCE / 2)
-        self.se2bounds.setHigh(1, max(goal_point[1], start_point[1]) + CHUNK_DISTANCE / 2)
+        self.se2bounds.setLow(0, min(self.goal_point[0], start_point[0]) - CHUNK_DISTANCE / 2)
+        self.se2bounds.setLow(1, min(self.goal_point[1], start_point[1]) - CHUNK_DISTANCE / 2)
+        self.se2bounds.setHigh(0, max(self.goal_point[0], start_point[0]) + CHUNK_DISTANCE / 2)
+        self.se2bounds.setHigh(1, max(self.goal_point[1], start_point[1]) + CHUNK_DISTANCE / 2)
         self.se2space.setBounds(self.se2bounds)
 
-        self.ss.setPlanner(self.planner)
-        solved = self.ss.solve(CHUNK_DURATION - 0.010)
-        print("====>", round((time.time() - start) * 1000), "ms, ", end='')
-        if solved:
-            solution = self.ss.getSolutionPath()
-            controls = solution.getControls()
-            count = solution.getControlCount()
-            if self.ss.haveExactSolutionPath():
-                self.control = [controls[0][0], controls[0][1]]
-                print("complete:", count, self.control)
-            else:
-                self.control = [controls[0][0], 0]
-                print("incomplete:", count, self.control)
-        else:
-            self.control = [0, 0]
-            print("not solved")
+        #self.ss.setPlanner(self.planner)
+        #solved = self.ss.solve(CHUNK_DURATION - 0.010)
+        #print("====>", round((time.time() - start) * 1000), "ms, ", end='')
+        #if solved:
+            #solution = self.ss.getSolutionPath()
+            #controls = solution.getControls()
+            #count = solution.getControlCount()
+            #if self.ss.haveExactSolutionPath():
+                #self.control = [controls[0][0], controls[0][1]]
+                #print("complete:", count, self.control)
+            #else:
+                #self.control = [controls[0][0], 0]
+                #print("incomplete:", count, self.control)
+        #else:
+            #self.control = [0, 0]
+            #print("not solved")
+
+        cs = self.csampler_alloc(self.controlspace)
+        self.control = [0, 0]
+        cs.sample(self.control, future_state())
 
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
