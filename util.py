@@ -353,11 +353,6 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
                 break
             l_last = l_new
             r_last = r_new
-
-    if out < -np.pi:
-        out = out + 2*np.pi
-    elif out >= np.pi:
-        out = out - 2*np.pi
     return out
 
 @njit(cache=True)

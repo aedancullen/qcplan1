@@ -35,8 +35,9 @@ CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 10
 GOAL_THRESHOLD = 2
 
-DIRECTION_STEP = np.radians(1)
-CONT_THRESH = 0.5
+TANGENT_DIRECTION_STEP = np.radians(1)
+TANGENT_CONT_THRESH = 0.5
+TANGENT_GAIN = 0.25
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
@@ -47,16 +48,26 @@ class QCPassControlSampler(oc.ControlSampler):
 
     def sample(self, control, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
+
         target_dir = util.tangent_bug(
             np_state,
             self.latched_map,
             GRIDMAP_XY_SUBDIV,
             self.goal_point,
             self.goal_angle,
-            DIRECTION_STEP,
-            CONT_THRESH,
+            TANGENT_DIRECTION_STEP,
+            TANGENT_CONT_THRESH,
             PARAMS["width"]
         )
+
+        steer_dir = target_dir - state[0].getYaw()
+        if steer_dir < -np.pi:
+            steer_dir = steer_dir + 2*np.pi
+        elif steer_dir >= np.pi:
+            steer_dir = steer_dir - 2*np.pi
+
+        control[0] = np.clip(steer_dir * TANGENT_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0])
+        control[1] = 20
 
 class QCPlan1:
     def __init__(self, hardware_map, waypoints_fn, gridmap_fn):
