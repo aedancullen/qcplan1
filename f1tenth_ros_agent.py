@@ -286,8 +286,8 @@ class QCPlan1:
 
         self.statespace.enforceBounds(state)
 
-    def csampler_alloc(self, control_space):
-        return QCPassControlSampler(control_space, self.latched_map, self.goal_point, self.goal_angle)
+    def csampler_alloc(self, controlspace):
+        return QCPassControlSampler(controlspace, self.latched_map, self.goal_point, self.goal_angle)
 
 class HardwareMap:
     def __init__(self):
