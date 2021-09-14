@@ -327,13 +327,14 @@ def rangefind(np_state, latched_map, map_subdiv, direction, max_dist, width):
 @njit(cache=True)
 def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direction_step, cont_thresh, width):
     goal_direction = np.arctan2(goal_point[1] - np_state[1], goal_point[0] - np_state[0])
+    goal_dist = np.linalg.norm(goal_point - np_state[:2])
     dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist, width)
     out = goal_direction
     if dist < goal_dist:
         l_last = dist
         r_last = dist
-        sweep_angle_l = goal_direction
-        sweep_angle_r = goal_direction
+        sweep_direction_l = goal_direction
+        sweep_direction_r = goal_direction
         for i in range(round(np.pi / direction_step)):
             sweep_direction_l += direction_step
             sweep_direction_r -= direction_step
@@ -343,13 +344,13 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
                 out = sweep_direction_l
                 break
             if l_last - l_new > cont_thresh: # came nearer; backtrack
-                out = sweep_direction_l -= direction_step
+                out = sweep_direction_l - direction_step
                 break
             if r_new - r_last > cont_thresh: # went farther
                 out = sweep_direction_r
                 break
             if r_last - r_new > cont_thresh: # came nearer; backtrack
-                out = sweep_direction_r += direction_step
+                out = sweep_direction_r + direction_step
                 break
             l_last = l_new
             r_last = r_new
