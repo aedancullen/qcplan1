@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import os
+import sys
 import time
 
 import rospy
@@ -18,27 +19,27 @@ import util
 
 ou.setLogLevel(ou.LOG_ERROR)
 
-PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}
+PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}#'width': 0.5, 'length': 0.8}#
 
 NUM_CONTROLS = 2
 CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
 CONTROL_UPPER = [PARAMS["s_max"], PARAMS["v_max"]]
 
-GRIDMAP_XY_SUBDIV = 1/0.07712
+GRIDMAP_XY_SUBDIV = 1/0.08534
 
 PHYSICS_TIMESTEP = 0.01 # Actual value used in calculation
 SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbacks
 
-CHUNK_MULTIPLIER = 10
+CHUNK_MULTIPLIER = 5
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 15
+CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
 TANGENT_DIRECTION_STEP = np.radians(1)
 TANGENT_CONT_THRESH = 2
-STEER_GAIN = 0.1
-STEER_STDEV = 0.05
+STEER_GAIN = 0.2
+STEER_STDEV = 0.2
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
@@ -115,20 +116,28 @@ class QCPlan1:
         self.state = ob.State(self.statespace)
         state = self.state()
         if self.hardware_map.scan.header.frame_id.startswith("ego"):
-            i = 0
             print("====>", "Identity is ego")
-        else:
-            i = 1
+            state[0].setX(0.8007017)
+            state[0].setY(-0.2753365)
+            state[0].setYaw(4.1421595)
+        elif self.hardware_map.scan.header.frame_id.startswith("opp"):
             print("====>", "Identity is opp")
-        state[0].setX(0. + (i * 0.75))
-        state[0].setY(0. - (i*1.5))
-        state[0].setYaw(np.radians(60))
+            state[0].setX(0.8162458)
+            state[0].setY(1.1614572)
+            state[0].setYaw(4.1446321)
+        else:
+            print("====>", "Unknown frame_id:", self.hardware_map.scan.header.frame_id)
+            sys.exit()
+        #state[0].setX(0. + (i * 0.75))
+        #state[0].setY(0. - (i*1.5))
+        #state[0].setYaw(np.radians(60))
         state[1][0] = 0
         state[1][1] = 0
         state[1][2] = 0
         state[1][3] = 0
         state[1][4] = 0
         state[1][5] = 0
+        self.statespace.enforceBounds(self.state())
 
     def loop(self, timer):
         start = time.time()

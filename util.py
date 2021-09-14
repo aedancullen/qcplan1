@@ -252,50 +252,6 @@ def pid(speed, steer, current_speed, current_steer, max_sv, max_a, max_v, min_v)
     return accl, sv
 
 @njit(cache=True)
-def get_trmtx(pose):
-    """
-    Get transformation matrix of vehicle frame -> global frame
-
-    Args:
-        pose (np.ndarray (3, )): current pose of the vehicle
-
-    return:
-        H (np.ndarray (4, 4)): transformation matrix
-    """
-    x = pose[0]
-    y = pose[1]
-    th = pose[2]
-    cos = np.cos(th)
-    sin = np.sin(th)
-    H = np.array([[cos, -sin, 0., x], [sin, cos, 0., y], [0., 0., 1., 0.], [0., 0., 0., 1.]])
-    return H
-
-@njit(cache=True)
-def get_vertices(pose, length, width):
-    """
-    Utility function to return vertices of the car body given pose and size
-
-    Args:
-        pose (np.ndarray, (3, )): current world coordinate pose of the vehicle
-        length (float): car length
-        width (float): car width
-
-    Returns:
-        vertices (np.ndarray, (4, 2)): corner vertices of the vehicle body
-    """
-    H = get_trmtx(pose)
-    rl = H.dot(np.asarray([[-length/2],[width/2],[0.], [1.]])).flatten()
-    rr = H.dot(np.asarray([[-length/2],[-width/2],[0.], [1.]])).flatten()
-    fl = H.dot(np.asarray([[length/2],[width/2],[0.], [1.]])).flatten()
-    fr = H.dot(np.asarray([[length/2],[-width/2],[0.], [1.]])).flatten()
-    rl = rl/rl[3]
-    rr = rr/rr[3]
-    fl = fl/fl[3]
-    fr = fr/fr[3]
-    vertices = np.asarray([[rl[0], rl[1]], [rr[0], rr[1]], [fr[0], fr[1]], [fl[0], fl[1]]])
-    return vertices
-
-@njit(cache=True)
 def rangefind(np_state, latched_map, map_subdiv, direction, max_dist, width):
     step = 1 / map_subdiv
     cos_step = np.cos(direction) * step
@@ -358,20 +314,31 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
 
 @njit(cache=True)
 def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
-    vertices = get_vertices(np_state, length, width)
-    xmin = min(vertices[0][0], vertices[1][0], vertices[2][0], vertices[3][0])
-    xmax = max(vertices[0][0], vertices[1][0], vertices[2][0], vertices[3][0])
-    ymin = min(vertices[0][1], vertices[1][1], vertices[2][1], vertices[3][1])
-    ymax = max(vertices[0][1], vertices[1][1], vertices[2][1], vertices[3][1])
-
-    xmin = discretize(latched_map.shape[0], map_subdiv, xmin)
-    xmax = discretize(latched_map.shape[0], map_subdiv, xmax)
-    ymin = discretize(latched_map.shape[1], map_subdiv, ymin)
-    ymax = discretize(latched_map.shape[1], map_subdiv, ymax)
-
-    for x in range(xmin - 1, xmax + 2):
-        for y in range(ymin - 1, ymax + 2):
-            if latched_map[x, y] >= 128:
+    direction = np_state[2]
+    step = 1 / map_subdiv
+    cos_step = np.cos(direction) * step
+    sin_step = np.sin(direction) * step
+    cos_step_perp = np.cos(direction + np.pi / 2) * step
+    sin_step_perp = np.sin(direction + np.pi / 2) * step
+    trans_x = np_state[0] - np.cos(direction) * length / 2
+    trans_y = np_state[1] - np.sin(direction) * length / 2
+    dist = 0
+    while dist < length:
+        trans_x += cos_step
+        trans_y += sin_step
+        dist += step
+        trans_x_perp = 0
+        trans_y_perp = 0
+        dist_perp = 0
+        while dist_perp < width / 2:
+            trans_x_perp += cos_step_perp
+            trans_y_perp += sin_step_perp
+            dist_perp += step
+            x1 = discretize(latched_map.shape[0], map_subdiv, trans_x + trans_x_perp);
+            y1 = discretize(latched_map.shape[1], map_subdiv, trans_y + trans_y_perp);
+            x2 = discretize(latched_map.shape[0], map_subdiv, trans_x - trans_x_perp);
+            y2 = discretize(latched_map.shape[1], map_subdiv, trans_y - trans_y_perp);
+            if latched_map[x1, y1] >= 128 or latched_map[x2, y2] >= 128:
                 return False
     return True
 
