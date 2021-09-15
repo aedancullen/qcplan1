@@ -38,10 +38,10 @@ GOAL_THRESHOLD = 2
 
 TANGENT_DIRECTION_STEP = np.radians(1)
 TANGENT_CONT_THRESH = 2
-STEER_GAIN = 0.2
-STEER_STDEV = 0.2
+STEER_GAIN = 0.1
+STEER_STDEV = 0.3
 VEL_MEAN = 15
-VEL_STDEV = 10
+VEL_STDEV = 5
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
