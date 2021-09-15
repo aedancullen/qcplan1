@@ -285,7 +285,7 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
     goal_direction = np.arctan2(goal_point[1] - np_state[1], goal_point[0] - np_state[0])
     goal_dist = np.linalg.norm(goal_point - np_state[:2])
     dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist, width)
-    out = goal_direction
+    target = goal_direction
     if dist < goal_dist:
         l_last = dist
         r_last = dist
@@ -297,20 +297,33 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
             l_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_l, goal_dist * 2, width)
             r_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_r, goal_dist * 2, width)
             if l_new - l_last > cont_thresh: # went farther
-                out = sweep_direction_l
+                target = sweep_direction_l
                 break
             if l_last - l_new > cont_thresh: # came nearer; backtrack
-                out = sweep_direction_l - direction_step
+                target = sweep_direction_l - direction_step
                 break
             if r_new - r_last > cont_thresh: # went farther
-                out = sweep_direction_r
+                target = sweep_direction_r
                 break
             if r_last - r_new > cont_thresh: # came nearer; backtrack
-                out = sweep_direction_r + direction_step
+                target = sweep_direction_r + direction_step
                 break
             l_last = l_new
             r_last = r_new
-    return out
+
+    target_aim = target - np_state[2]
+    if target_aim < -np.pi:
+        target_aim += 2*np.pi
+    elif target_aim >= np.pi:
+        target_aim -= 2*np.pi
+
+    goal_direction_aim = goal_direction - np_state[2]
+    if goal_direction_aim < -np.pi:
+        goal_direction_aim += 2*np.pi
+    elif goal_direction_aim >= np.pi:
+        goal_direction_aim -= 2*np.pi
+
+    return target_aim, goal_direction_aim
 
 @njit(cache=True)
 def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
@@ -366,9 +379,9 @@ def fast_state_propagate(np_state, steer0, steer, control, duration, physics_tim
     for i in range(int(duration)):
         # bound yaw angle
         if np_state[4] > 2*np.pi:
-            np_state[4] = np_state[4] - 2*np.pi
+            np_state[4] -= 2*np.pi
         elif np_state[4] < 0:
-            np_state[4] = np_state[4] + 2*np.pi
+            np_state[4] += 2*np.pi
 
         # steering angle velocity input to steering velocity acceleration input
         accl, sv = pid(vel, steer, np_state[3], np_state[2], sv_max, a_max, v_max, v_min)
@@ -402,9 +415,9 @@ def fast_state_propagate(np_state, steer0, steer, control, duration, physics_tim
 
     # bound yaw angle
     if np_state[4] > 2*np.pi:
-        np_state[4] = np_state[4] - 2*np.pi
+        np_state[4] -= 2*np.pi
     elif np_state[4] < 0:
-        np_state[4] = np_state[4] + 2*np.pi
+        np_state[4] += 2*np.pi
 
     return np_state, steer0, steer
 
