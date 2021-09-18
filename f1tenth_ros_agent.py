@@ -19,7 +19,7 @@ import util
 
 ou.setLogLevel(ou.LOG_ERROR)
 
-PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.5, 'length': 0.8}#'width': 0.31, 'length': 0.58}#
+PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}#'width': 0.5, 'length': 0.8}#
 
 NUM_CONTROLS = 2
 CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
@@ -38,8 +38,8 @@ GOAL_THRESHOLD = 2
 
 TANGENT_DIRECTION_STEP = np.radians(1)
 TANGENT_CONT_THRESH = 2
-STEER_GAIN = 0.1
-STEER_STDEV = 0.3
+STEER_GAIN = 0.2
+STEER_STDEV = 0.2
 VEL_MEAN = 15
 VEL_STDEV = 5
 
@@ -50,7 +50,7 @@ class QCPassControlSampler(oc.ControlSampler):
         self.goal_point = goal_point
         self.goal_angle = goal_angle
 
-    def sample(self, control, state):
+    def sample(self, control, state, selections):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
 
         target, goal_direction = util.tangent_bug(
@@ -65,7 +65,10 @@ class QCPassControlSampler(oc.ControlSampler):
         )
 
         control[0] = np.clip(np.random.normal(target * STEER_GAIN, STEER_STDEV), CONTROL_LOWER[0], CONTROL_UPPER[0])
-        control[1] = np.clip(np.random.normal(VEL_MEAN, VEL_STDEV), CONTROL_LOWER[1], CONTROL_UPPER[1])#np.random.power(2) * CONTROL_UPPER[1];
+        if selections == -1:
+            control[1] = CONTROL_UPPER[1]
+        else:
+            control[1] = np.clip(np.random.normal(VEL_MEAN, VEL_STDEV), CONTROL_LOWER[1], CONTROL_UPPER[1])
 
 class QCPlan1:
     def __init__(self, hardware_map, waypoints_fn, gridmap_fn):
@@ -124,9 +127,7 @@ class QCPlan1:
         else:
             print("====>", "Unknown frame_id:", self.hardware_map.scan.header.frame_id)
             sys.exit()
-        #state[0].setX(0. + (i * 0.75))
-        #state[0].setY(0. - (i*1.5))
-        #state[0].setYaw(np.radians(60))
+
         state[1][0] = 0
         state[1][1] = 0
         state[1][2] = 0
@@ -188,7 +189,7 @@ class QCPlan1:
         #self.planner.setPruningRadius(0.01) # tenth of default
         #self.planner.setSelectionRadius(0.02) # tenth of default
         self.planner.setPruningRadius(0.00)
-        #self.planner.setSelectionRadius(0.00)
+        self.planner.setSelectionRadius(0.00)
         if self.ss.getLastPlannerStatus():
             # Copy old path into a new PathControl because it will be freed on self.ss.clear()
             seed_path = oc.PathControl(self.ss.getSolutionPath())
