@@ -33,15 +33,15 @@ SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbac
 CHUNK_MULTIPLIER = 5
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 10
+CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
 TANGENT_DIRECTION_STEP = np.radians(1)
 TANGENT_CONT_THRESH = 2
-STEER_GAIN = 0.3
-STEER_STDEV = 0.4
-VEL_MEAN = 20
-VEL_STDEV = 10
+STEER_GAIN = 0.2
+STEER_STDEV = 0.2
+VEL_MEAN = 15
+VEL_STDEV = 5
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):

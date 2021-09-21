@@ -291,7 +291,7 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
         r_last = dist
         sweep_direction_l = goal_direction
         sweep_direction_r = goal_direction
-        for i in range(round(np.pi / direction_step)):
+        for i in range(round((np.pi / 2) / direction_step)):
             sweep_direction_l += direction_step
             sweep_direction_r -= direction_step
             l_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_l, goal_dist * 2, width)
