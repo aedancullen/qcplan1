@@ -17,7 +17,7 @@ from ompl import control as oc
 
 import util
 
-ou.setLogLevel(ou.LOG_ERROR)
+ou.setLogLevel(ou.LOG_INFO)
 
 PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.5, 'length': 0.8}#'width': 0.31, 'length': 0.58}#
 
@@ -37,11 +37,11 @@ CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
 TANGENT_DIRECTION_STEP = np.radians(1)
-TANGENT_CONT_THRESH = 2
+TANGENT_CONT_THRESH = 3
 STEER_GAIN = 0.2
 STEER_STDEV = 0.2
-VEL_MEAN = 15
-VEL_STDEV = 5
+VEL_MEAN = 14
+VEL_STDEV = 4
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
@@ -159,16 +159,16 @@ class QCPlan1:
         self.statespace.enforceBounds(self.state())
 
         # Latch map
-        np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
+        #np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
         self.latched_map = self.gridmap.copy()
-        util.combine_scan(
-            np_state,
-            self.latched_map,
-            GRIDMAP_XY_SUBDIV,
-            np.array(obs_captured.ranges),
-            self.hardware_map.angle_min,
-            self.hardware_map.angle_inc,
-        )
+        #util.combine_scan(
+            #np_state,
+            #self.latched_map,
+            #GRIDMAP_XY_SUBDIV,
+            #np.array(obs_captured.ranges),
+            #self.hardware_map.angle_min,
+            #self.hardware_map.angle_inc,
+        #)
 
         # Predict future state if controls were issued
         future_state = ob.State(self.statespace)
