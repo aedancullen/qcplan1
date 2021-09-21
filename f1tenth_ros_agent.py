@@ -17,7 +17,7 @@ from ompl import control as oc
 
 import util
 
-ou.setLogLevel(ou.LOG_INFO)
+ou.setLogLevel(ou.LOG_ERROR)
 
 PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.5, 'length': 0.8}#'width': 0.31, 'length': 0.58}#
 
@@ -36,12 +36,12 @@ CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
-TANGENT_DIRECTION_STEP = np.radians(1)
-TANGENT_CONT_THRESH = 3
-STEER_GAIN = 0.2
+TANGENT_DIRECTION_STEP = np.radians(0.1)
+TANGENT_CONT_THRESH = 0.5
+STEER_GAIN = 0.4
 STEER_STDEV = 0.2
-VEL_MEAN = 14
-VEL_STDEV = 4
+VEL_MEAN = 15
+VEL_STDEV = 10
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
@@ -81,6 +81,11 @@ class QCPlan1:
         self.waypoints /= GRIDMAP_XY_SUBDIV
 
         self.se2space = ob.SE2StateSpace()
+        self.se2bounds = ob.RealVectorBounds(2)
+        self.se2bounds.setLow(-99999) # don't care
+        self.se2bounds.setHigh(99999)
+        self.se2space.setBounds(self.se2bounds)
+
         self.vectorspace = ob.RealVectorStateSpace(6)
         self.vectorbounds = ob.RealVectorBounds(6)
         self.vectorbounds.setLow(-99999) # don't care
@@ -118,6 +123,7 @@ class QCPlan1:
             state[0].setX(0.8007017)
             state[0].setY(-0.2753365)
             state[0].setYaw(4.1421595)
+
         elif False:
             print("====>", "Identity is opp")
             state[0].setX(0.8162458)
@@ -133,6 +139,7 @@ class QCPlan1:
         state[1][3] = 0
         state[1][4] = 0
         state[1][5] = 0
+        self.se2space.setBounds(self.se2bounds)
         self.statespace.enforceBounds(self.state())
 
     def loop(self, timer):
@@ -156,6 +163,7 @@ class QCPlan1:
         self.state()[0].setYaw(z)
         self.state()[1][1] = obs_captured.ego_twist.twist.linear.x
         self.state()[1][2] = obs_captured.ego_twist.twist.angular.z
+        self.se2space.setBounds(self.se2bounds)
         self.statespace.enforceBounds(self.state())
 
         # Latch map
@@ -194,17 +202,17 @@ class QCPlan1:
         nearest_point, nearest_dist, t, i = util.nearest_point_on_trajectory(start_point, self.waypoints)
         self.goal_point, self.goal_angle, t, i = util.walk_along_trajectory(self.waypoints, t, i, CHUNK_DISTANCE)
 
-        self.goal_state = ob.State(self.statespace)
-        self.goal_state()[0].setX(self.goal_point[0])
-        self.goal_state()[0].setY(self.goal_point[1])
-        self.goal_state()[0].setYaw(self.goal_angle)
-        self.ss.setGoalState(self.goal_state, GOAL_THRESHOLD)
-        self.se2bounds = ob.RealVectorBounds(2)
-        self.se2bounds.setLow(0, min(self.goal_point[0], start_point[0]) - CHUNK_DISTANCE / 2)
-        self.se2bounds.setLow(1, min(self.goal_point[1], start_point[1]) - CHUNK_DISTANCE / 2)
-        self.se2bounds.setHigh(0, max(self.goal_point[0], start_point[0]) + CHUNK_DISTANCE / 2)
-        self.se2bounds.setHigh(1, max(self.goal_point[1], start_point[1]) + CHUNK_DISTANCE / 2)
-        self.se2space.setBounds(self.se2bounds)
+        goal_state = ob.State(self.statespace)
+        goal_state()[0].setX(self.goal_point[0])
+        goal_state()[0].setY(self.goal_point[1])
+        goal_state()[0].setYaw(self.goal_angle)
+        self.ss.setGoalState(goal_state, GOAL_THRESHOLD)
+        planbounds = ob.RealVectorBounds(2)
+        planbounds.setLow(0, min(self.goal_point[0], start_point[0]) - CHUNK_DISTANCE / 2)
+        planbounds.setLow(1, min(self.goal_point[1], start_point[1]) - CHUNK_DISTANCE / 2)
+        planbounds.setHigh(0, max(self.goal_point[0], start_point[0]) + CHUNK_DISTANCE / 2)
+        planbounds.setHigh(1, max(self.goal_point[1], start_point[1]) + CHUNK_DISTANCE / 2)
+        self.se2space.setBounds(planbounds)
 
         self.ss.setPlanner(self.planner)
         solved = self.ss.solve(CHUNK_DURATION - 0.010)
@@ -222,6 +230,24 @@ class QCPlan1:
         else:
             print("not solved")
 
+        #np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
+
+        #target, goal_direction = util.tangent_bug(
+            #np_state,
+            #self.latched_map,
+            #GRIDMAP_XY_SUBDIV,
+            #self.goal_point,
+            #self.goal_angle,
+            #TANGENT_DIRECTION_STEP,
+            #TANGENT_CONT_THRESH,
+            #PARAMS["width"]
+        #)
+
+        #self.control = [0, 0]
+        #self.control[0] = np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0])
+        #self.control[1] = 5
+
+
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
         return util.fast_state_validity_check(
@@ -230,7 +256,7 @@ class QCPlan1:
             GRIDMAP_XY_SUBDIV,
             PARAMS["length"],
             PARAMS["width"],
-        )
+        ) and self.statespace.satisfiesBounds(state)
 
     def state_propagate(self, start, control, duration, state):
         np_state = np.array([
@@ -282,8 +308,6 @@ class QCPlan1:
         state[1][3] = np_state[6]
         state[1][4] = steer0
         state[1][5] = steer
-
-        self.statespace.enforceBounds(state)
 
     def csampler_alloc(self, controlspace):
         return QCPassControlSampler(controlspace, self.latched_map, self.goal_point, self.goal_angle)

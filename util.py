@@ -297,19 +297,21 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
             l_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_l, goal_dist * 2, width)
             r_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_r, goal_dist * 2, width)
             if l_new - l_last > cont_thresh: # went farther
-                target = sweep_direction_l
+                target = sweep_direction_l + direction_step
                 break
             if l_last - l_new > cont_thresh: # came nearer; backtrack
-                target = sweep_direction_l - direction_step
+                target = sweep_direction_l - 2 * direction_step
                 break
             if r_new - r_last > cont_thresh: # went farther
-                target = sweep_direction_r
+                target = sweep_direction_r - direction_step
                 break
             if r_last - r_new > cont_thresh: # came nearer; backtrack
-                target = sweep_direction_r + direction_step
+                target = sweep_direction_r + 2 * direction_step
                 break
             l_last = l_new
             r_last = r_new
+        #if i == round((np.pi / 2) / direction_step) - 1:
+            #print("oof")
 
     target_aim = target - np_state[2]
     if target_aim < -np.pi:
@@ -328,7 +330,7 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
 @njit(cache=True)
 def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
     direction = np_state[2]
-    step = 1 / map_subdiv
+    step = 1 / map_subdiv / 2
     cos_step = np.cos(direction) * step
     sin_step = np.sin(direction) * step
     cos_step_perp = np.cos(direction + np.pi / 2) * step
@@ -413,11 +415,10 @@ def fast_state_propagate(np_state, steer0, steer, control, duration, physics_tim
         steer = steer0
         steer0 = control[0]
 
-    # bound yaw angle
-    if np_state[4] > 2*np.pi:
-        np_state[4] -= 2*np.pi
-    elif np_state[4] < 0:
+    if np_state[4] < -np.pi:
         np_state[4] += 2*np.pi
+    elif np_state[4] >= np.pi:
+        np_state[4] -= 2*np.pi
 
     return np_state, steer0, steer
 
