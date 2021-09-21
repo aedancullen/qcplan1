@@ -4,10 +4,10 @@ import sys
 import time
 
 import rospy
-from nav_msgs.msg import Odometry
-from sensor_msgs.msg import LaserScan
-from ackermann_msgs.msg import AckermannDriveStamped
 from f1tenth_gym_ros.msg import RaceInfo
+from ackermann_msgs.msg import AckermannDriveStamped
+from geometry_msgs.msg import PoseWithCovariance, TwistWithCovariance
+from pkg.msg import Observation
 from tf.transformations import euler_from_quaternion
 
 import numpy as np
@@ -19,7 +19,7 @@ import util
 
 ou.setLogLevel(ou.LOG_ERROR)
 
-PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}#'width': 0.5, 'length': 0.8}#
+PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.5, 'length': 0.8}#'width': 0.31, 'length': 0.58}#
 
 NUM_CONTROLS = 2
 CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
@@ -33,15 +33,15 @@ SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbac
 CHUNK_MULTIPLIER = 5
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 7
+CHUNK_DISTANCE = 10
 GOAL_THRESHOLD = 2
 
 TANGENT_DIRECTION_STEP = np.radians(1)
 TANGENT_CONT_THRESH = 2
-STEER_GAIN = 0.2
-STEER_STDEV = 0.2
-VEL_MEAN = 15
-VEL_STDEV = 5
+STEER_GAIN = 0.3
+STEER_STDEV = 0.4
+VEL_MEAN = 20
+VEL_STDEV = 10
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
@@ -104,7 +104,6 @@ class QCPlan1:
 
         #========
 
-        self.last_physics_ticks_elapsed = 0
         self.last_control = [0, 0]
         self.control = None
 
@@ -114,18 +113,18 @@ class QCPlan1:
         
         self.state = ob.State(self.statespace)
         state = self.state()
-        if self.hardware_map.scan.header.frame_id.startswith("ego"):
+        if True:
             print("====>", "Identity is ego")
             state[0].setX(0.8007017)
             state[0].setY(-0.2753365)
             state[0].setYaw(4.1421595)
-        elif self.hardware_map.scan.header.frame_id.startswith("opp"):
+        elif False:
             print("====>", "Identity is opp")
             state[0].setX(0.8162458)
             state[0].setY(1.1614572)
             state[0].setYaw(4.1446321)
         else:
-            print("====>", "Unknown frame_id:", self.hardware_map.scan.header.frame_id)
+            print("====>", "Unmatched frame_id:", self.hardware_map.observations.header.frame_id)
             sys.exit()
 
         state[1][0] = 0
@@ -142,25 +141,21 @@ class QCPlan1:
         if self.control is not None:
             self.hardware_map.drive(self.control[0], self.control[1])
 
-        odom_captured = self.hardware_map.odom
-        scan_captured = self.hardware_map.scan
+        obs_captured = self.hardware_map.observations
 
         # Update real state
-        physics_ticks_elapsed = round(self.hardware_map.race_info.ego_elapsed_time / PHYSICS_TIMESTEP)
-        physics_ticks_new = physics_ticks_elapsed - self.last_physics_ticks_elapsed
-        self.last_physics_ticks_elapsed = physics_ticks_elapsed
-        self.state_propagate(self.state(), self.last_control, physics_ticks_new, self.state())
-        self.state()[0].setX(odom_captured.pose.pose.position.x)
-        self.state()[0].setY(odom_captured.pose.pose.position.y)
+        self.state_propagate(self.state(), self.last_control, CHUNK_DURATION / SIM_INTERVAL, self.state())
+        self.state()[0].setX(obs_captured.ego_pose.pose.position.x)
+        self.state()[0].setY(obs_captured.ego_pose.pose.position.y)
         x, y, z = euler_from_quaternion([
-            odom_captured.pose.pose.orientation.x,
-            odom_captured.pose.pose.orientation.y,
-            odom_captured.pose.pose.orientation.z,
-            odom_captured.pose.pose.orientation.w,
+            obs_captured.ego_pose.pose.orientation.x,
+            obs_captured.ego_pose.pose.orientation.y,
+            obs_captured.ego_pose.pose.orientation.z,
+            obs_captured.ego_pose.pose.orientation.w,
         ])
         self.state()[0].setYaw(z)
-        self.state()[1][1] = odom_captured.twist.twist.linear.x
-        self.state()[1][2] = odom_captured.twist.twist.angular.z
+        self.state()[1][1] = obs_captured.ego_twist.twist.linear.x
+        self.state()[1][2] = obs_captured.ego_twist.twist.angular.z
         self.statespace.enforceBounds(self.state())
 
         # Latch map
@@ -170,9 +165,9 @@ class QCPlan1:
             np_state,
             self.latched_map,
             GRIDMAP_XY_SUBDIV,
-            np.array(scan_captured.ranges),
-            scan_captured.angle_min,
-            scan_captured.angle_increment,
+            np.array(obs_captured.ranges),
+            self.hardware_map.angle_min,
+            self.hardware_map.angle_inc,
         )
 
         # Predict future state if controls were issued
@@ -186,8 +181,6 @@ class QCPlan1:
         # Plan from future state
 
         self.planner = oc.SST(self.si)
-        #self.planner.setPruningRadius(0.01) # tenth of default
-        #self.planner.setSelectionRadius(0.02) # tenth of default
         self.planner.setPruningRadius(0.00)
         self.planner.setSelectionRadius(0.00)
         if self.ss.getLastPlannerStatus():
@@ -297,32 +290,28 @@ class QCPlan1:
 
 class HardwareMap:
     def __init__(self):
-        self.odom = None
-        self.scan = None
-        self.race_info = None
+        self.observations = None
 
-        self.odom_sub = rospy.Subscriber("/%s/odom" % agent_name, Odometry, self.odom_callback, queue_size=1)
-        self.scan_sub = rospy.Subscriber("/%s/scan" % agent_name, LaserScan, self.scan_callback, queue_size=1)
-        self.race_info_sub = rospy.Subscriber("/race_info", RaceInfo, self.race_info_callback, queue_size=1)
+        scan_fov = rospy.get_param('scan_fov')
+        scan_beams = rospy.get_param('scan_beams')
+        self.angle_min = -scan_fov / 2.
+        self.angle_max = scan_fov / 2.
+        self.angle_inc = scan_fov / scan_beams
+
+        self.observations_sub = rospy.Subscriber("/%s/observations" % agent_name, Observation, self.observations_callback, queue_size=1)
         self.drive_pub = rospy.Publisher("/%s/drive" % agent_name, AckermannDriveStamped, queue_size=1)
 
-    def odom_callback(self, odom):
-        self.odom = odom
+    def observations_callback(self, observations):
+        self.observations = observations
 
-    def scan_callback(self, scan):
-        self.scan = scan
-
-    def race_info_callback(self, race_info):
-        self.race_info = race_info
-        
     def drive(self, steering_angle, speed):
         msg = AckermannDriveStamped()
         msg.drive.steering_angle = steering_angle
         msg.drive.speed = speed
         self.drive_pub.publish(msg)
-        
+
     def ready(self):
-        return self.scan is not None and self.race_info is not None and self.odom is not None
+        return self.observations is not None
 
 if __name__ == "__main__":
     agent_name = os.environ.get("F1TENTH_AGENT_NAME")
