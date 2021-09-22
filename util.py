@@ -253,7 +253,7 @@ def pid(speed, steer, current_speed, current_steer, max_sv, max_a, max_v, min_v)
 
 @njit(cache=True)
 def rangefind(np_state, latched_map, map_subdiv, direction, max_dist, width):
-    step = 1 / map_subdiv
+    step = 1 / map_subdiv / 2
     cos_step = np.cos(direction) * step
     sin_step = np.sin(direction) * step
     cos_step_perp = np.cos(direction + np.pi / 2) * step
@@ -326,6 +326,29 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
         goal_direction_aim -= 2*np.pi
 
     return target_aim, goal_direction_aim
+
+@njit(cache=True)
+def farthest_target(np_state, latched_map, map_subdiv, goal_point, goal_angle, direction_step, width):
+    goal_direction = np.arctan2(goal_point[1] - np_state[1], goal_point[0] - np_state[0])
+    goal_dist = np.linalg.norm(goal_point - np_state[:2])
+    dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist, width)
+    if dist >= goal_dist:
+        target_aim = goal_direction - np_state[2]
+        if target_aim < -np.pi:
+            target_aim += 2*np.pi
+        elif target_aim >= np.pi:
+            target_aim -= 2*np.pi
+        return target_aim
+    sweep_direction = -np.pi / 2
+    target_aim = sweep_direction
+    target_dist = 0
+    for i in range(round(np.pi / direction_step)):
+        sweep_direction += direction_step
+        dist = rangefind(np_state, latched_map, map_subdiv, np_state[2] + sweep_direction, 100, width)
+        if dist > target_dist:
+            target_dist = dist
+            target_aim = sweep_direction
+    return target_aim
 
 @njit(cache=True)
 def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):

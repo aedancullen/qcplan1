@@ -36,12 +36,12 @@ CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
-TANGENT_DIRECTION_STEP = np.radians(0.1)
-TANGENT_CONT_THRESH = 0.5
-STEER_GAIN = 0.4
+HEURISTIC_DIRECTION_STEP = np.radians(0.5)
+HEURISTIC_CONT_THRESH = 2
+STEER_GAIN = 0.3
 STEER_STDEV = 0.2
-VEL_MEAN = 15
-VEL_STDEV = 10
+VEL_MEAN = 12
+VEL_STDEV = 5
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
@@ -53,15 +53,25 @@ class QCPassControlSampler(oc.ControlSampler):
     def sample(self, control, state, selections):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
 
-        target, goal_direction = util.tangent_bug(
+        #target, goal_direction = util.tangent_bug(
+            #np_state,
+            #self.latched_map,
+            #GRIDMAP_XY_SUBDIV,
+            #self.goal_point,
+            #self.goal_angle,
+            #HEURISTIC_DIRECTION_STEP,
+            #HEURISTIC_CONT_THRESH,
+            #PARAMS["width"],
+        #)
+
+        target = util.farthest_target(
             np_state,
             self.latched_map,
             GRIDMAP_XY_SUBDIV,
             self.goal_point,
             self.goal_angle,
-            TANGENT_DIRECTION_STEP,
-            TANGENT_CONT_THRESH,
-            PARAMS["width"]
+            HEURISTIC_DIRECTION_STEP,
+            0.001#PARAMS["width"],
         )
 
         control[0] = np.clip(np.random.normal(target * STEER_GAIN, STEER_STDEV), CONTROL_LOWER[0], CONTROL_UPPER[0])
@@ -151,7 +161,7 @@ class QCPlan1:
         obs_captured = self.hardware_map.observations
 
         # Update real state
-        self.state_propagate(self.state(), self.last_control, CHUNK_DURATION / SIM_INTERVAL, self.state())
+        self.state_propagate(self.state(), self.last_control, CHUNK_MULTIPLIER, self.state())
         self.state()[0].setX(obs_captured.ego_pose.pose.position.x)
         self.state()[0].setY(obs_captured.ego_pose.pose.position.y)
         x, y, z = euler_from_quaternion([
@@ -167,16 +177,16 @@ class QCPlan1:
         self.statespace.enforceBounds(self.state())
 
         # Latch map
-        #np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
+        np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
         self.latched_map = self.gridmap.copy()
-        #util.combine_scan(
-            #np_state,
-            #self.latched_map,
-            #GRIDMAP_XY_SUBDIV,
-            #np.array(obs_captured.ranges),
-            #self.hardware_map.angle_min,
-            #self.hardware_map.angle_inc,
-        #)
+        util.combine_scan(
+            np_state,
+            self.latched_map,
+            GRIDMAP_XY_SUBDIV,
+            np.array(obs_captured.ranges),
+            self.hardware_map.angle_min,
+            self.hardware_map.angle_inc,
+        )
 
         # Predict future state if controls were issued
         future_state = ob.State(self.statespace)
@@ -243,10 +253,19 @@ class QCPlan1:
             #PARAMS["width"]
         #)
 
+        #target = util.farthest_target(
+            #np_state,
+            #self.latched_map,
+            #GRIDMAP_XY_SUBDIV,
+            #self.goal_point,
+            #self.goal_angle,
+            #TANGENT_DIRECTION_STEP,
+            #PARAMS["width"],
+        #)
+
         #self.control = [0, 0]
         #self.control[0] = np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0])
         #self.control[1] = 5
-
 
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
@@ -344,7 +363,7 @@ if __name__ == "__main__":
     filepath = os.path.abspath(os.path.dirname(__file__))
     qc = QCPlan1(HardwareMap(),
         "%s/waypoints.csv" % filepath,
-        "%s/gridmap.npy" % filepath,
+        "%s/gridmap.npy.nonobs" % filepath,
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     rospy.spin()
