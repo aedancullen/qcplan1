@@ -36,11 +36,13 @@ CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
-HEURISTIC_DIRECTION_STEP = np.radians(0.5)
+HEURISTIC_DIRECTION_STEP = np.radians(1)
 HEURISTIC_CONT_THRESH = 2
 STEER_GAIN = 0.3
 STEER_STDEV = 0.2
-VEL_MEAN = 12
+VEL_MEAN_L = 10
+VEL_MEAN_H = 15
+VEL_GAIN = 1
 VEL_STDEV = 5
 
 class QCPassControlSampler(oc.ControlSampler):
@@ -53,32 +55,48 @@ class QCPassControlSampler(oc.ControlSampler):
     def sample(self, control, state, selections):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
 
-        #target, goal_direction = util.tangent_bug(
-            #np_state,
-            #self.latched_map,
-            #GRIDMAP_XY_SUBDIV,
-            #self.goal_point,
-            #self.goal_angle,
-            #HEURISTIC_DIRECTION_STEP,
-            #HEURISTIC_CONT_THRESH,
-            #PARAMS["width"],
-        #)
-
-        target = util.farthest_target(
+        target, goal_direction = util.tangent_bug(
             np_state,
             self.latched_map,
             GRIDMAP_XY_SUBDIV,
             self.goal_point,
             self.goal_angle,
             HEURISTIC_DIRECTION_STEP,
+            HEURISTIC_CONT_THRESH,
             0.001#PARAMS["width"],
         )
 
+        front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100, PARAMS["width"])
+
+        #target, front_dist = util.farthest_target(
+            #np_state,
+            #self.latched_map,
+            #GRIDMAP_XY_SUBDIV,
+            #self.goal_point,
+            #self.goal_angle,
+            #HEURISTIC_DIRECTION_STEP,
+            #0.001#PARAMS["width"],
+        #)
+
+        #c0 = np.random.normal(np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0]), STEER_STDEV)
+        #c1 = np.random.normal(np.clip(best_dist * VEL_GAIN, CONTROL_LOWER[1], CONTROL_UPPER[1]), VEL_STDEV)
+        #control[0] = np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
+        #control[1] = np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
+
         control[0] = np.clip(np.random.normal(target * STEER_GAIN, STEER_STDEV), CONTROL_LOWER[0], CONTROL_UPPER[0])
-        if selections == -1:
-            control[1] = CONTROL_UPPER[1]
-        else:
-            control[1] = np.clip(np.random.normal(VEL_MEAN, VEL_STDEV), CONTROL_LOWER[1], CONTROL_UPPER[1])
+        #control[1] = np.clip(np.random.normal(best_dist * VEL_GAIN, VEL_STDEV), CONTROL_LOWER[1], CONTROL_UPPER[1])
+        c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_UPPER[1] / 2, CONTROL_UPPER[1]), VEL_STDEV)
+        control[1] = np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
+
+        #if best_dist > 10:
+            #control[1] = np.clip(np.random.normal(VEL_MEAN_H, VEL_STDEV), CONTROL_LOWER[1], CONTROL_UPPER[1])
+        #else:
+            #control[1] = np.clip(np.random.normal(VEL_MEAN_L, VEL_STDEV), CONTROL_LOWER[1], CONTROL_UPPER[1])
+
+        #if selections == -1:
+            #control[1] = CONTROL_UPPER[1]
+        #else:
+            #control[1] = np.clip(np.random.normal(VEL_MEAN, VEL_STDEV), CONTROL_LOWER[1], CONTROL_UPPER[1])
 
 class QCPlan1:
     def __init__(self, hardware_map, waypoints_fn, gridmap_fn):
@@ -363,7 +381,7 @@ if __name__ == "__main__":
     filepath = os.path.abspath(os.path.dirname(__file__))
     qc = QCPlan1(HardwareMap(),
         "%s/waypoints.csv" % filepath,
-        "%s/gridmap.npy.nonobs" % filepath,
+        "%s/gridmap.npy" % filepath,
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     rospy.spin()
