@@ -37,12 +37,12 @@ CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
 HEURISTIC_DIRECTION_STEP = np.radians(1)
-HEURISTIC_CONT_THRESH = 2
+HEURISTIC_CONT_THRESH = 1
 STEER_GAIN = 0.1
 STEER_STDEV = 0.1
 VEL_MEAN_L = 10
 VEL_MEAN_H = 15
-VEL_GAIN = 1
+VEL_GAIN = 2
 VEL_STDEV = 5
 
 class QCPassControlSampler(oc.ControlSampler):
@@ -63,12 +63,12 @@ class QCPassControlSampler(oc.ControlSampler):
             self.goal_angle,
             HEURISTIC_DIRECTION_STEP,
             HEURISTIC_CONT_THRESH,
-            0.001#PARAMS["width"],
+            PARAMS["width"],
         )
 
-        front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100, 0.001)
+        front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100, PARAMS["width"])
 
-        #target, front_dist = util.farthest_target(
+        #target = util.farthest_target(
             #np_state,
             #self.latched_map,
             #GRIDMAP_XY_SUBDIV,
@@ -134,8 +134,8 @@ class QCPlan1:
         self.ss.setStatePropagator(oc.StatePropagatorFn(self.state_propagate))
 
         self.si = self.ss.getSpaceInformation()
-        self.si.setPropagationStepSize(CHUNK_MULTIPLIER)
-        self.si.setMinMaxControlDuration(1, 1)
+        self.si.setPropagationStepSize(1)
+        self.si.setMinMaxControlDuration(CHUNK_MULTIPLIER, CHUNK_MULTIPLIER)
 
         #========
 
@@ -199,14 +199,14 @@ class QCPlan1:
         # Latch map
         np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
         self.latched_map = self.gridmap.copy()
-        #util.combine_scan(
-            #np_state,
-            #self.latched_map,
-            #GRIDMAP_XY_SUBDIV,
-            #np.array(obs_captured.ranges),
-            #self.hardware_map.angle_min,
-            #self.hardware_map.angle_inc,
-        #)
+        util.combine_scan(
+            np_state,
+            self.latched_map,
+            GRIDMAP_XY_SUBDIV,
+            np.array(obs_captured.ranges),
+            self.hardware_map.angle_min,
+            self.hardware_map.angle_inc,
+        )
 
         # Predict future state if controls were issued
         future_state = ob.State(self.statespace)
@@ -382,8 +382,8 @@ if __name__ == "__main__":
     
     filepath = os.path.abspath(os.path.dirname(__file__))
     qc = QCPlan1(HardwareMap(),
-        "%s/waypoints.csv" % filepath,
-        "%s/gridmap.npy" % filepath,
+        "%s/waypoints.csv.nonobs" % filepath,
+        "%s/gridmap.npy.nonobs" % filepath,
     )
     loop_timer = rospy.Timer(rospy.Duration(CHUNK_DURATION), qc.loop)
     rospy.spin()

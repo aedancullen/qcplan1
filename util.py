@@ -329,8 +329,6 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direc
 
 @njit(cache=True)
 def farthest_target(np_state, latched_map, map_subdiv, goal_point, goal_angle, direction_step, width):
-    front_dist = rangefind(np_state, latched_map, map_subdiv, np_state[2], 100, width)
-
     goal_direction = np.arctan2(goal_point[1] - np_state[1], goal_point[0] - np_state[0])
     goal_dist = np.linalg.norm(goal_point - np_state[:2])
     dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist, width)
@@ -340,7 +338,7 @@ def farthest_target(np_state, latched_map, map_subdiv, goal_point, goal_angle, d
             target_aim += 2*np.pi
         elif target_aim >= np.pi:
             target_aim -= 2*np.pi
-        return target_aim, front_dist
+        return target_aim
 
     sweep_direction = -np.pi / 2
     target_aim = sweep_direction
@@ -352,7 +350,7 @@ def farthest_target(np_state, latched_map, map_subdiv, goal_point, goal_angle, d
             target_dist = dist
             target_aim = sweep_direction
 
-    return target_aim, front_dist
+    return target_aim
 
 @njit(cache=True)
 def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
