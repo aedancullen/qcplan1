@@ -36,11 +36,11 @@ CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
 CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
-HEURISTIC_DIRECTION_STEP = np.radians(1)
+HEURISTIC_DIRECTION_STEP = np.radians(0.1)
 HEURISTIC_CONT_THRESH = 1
-STEER_GAIN = 1
-STEER_STDEV = 0.2
-VEL_GAIN = 1
+STEER_GAIN = 0.5
+STEER_STDEV = 0.1
+VEL_GAIN = 2
 VEL_STDEV = 5
 
 class QCPassControlSampler(oc.ControlSampler):
@@ -65,7 +65,7 @@ class QCPassControlSampler(oc.ControlSampler):
         front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100)
 
         c0 = np.random.normal(np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0]), STEER_STDEV)
-        c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_UPPER[1], CONTROL_UPPER[1]), VEL_STDEV)
+        c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_LOWER[1], CONTROL_UPPER[1]), VEL_STDEV)
         control[0] = np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
         control[1] = np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
 
@@ -209,39 +209,39 @@ class QCPlan1:
         planbounds.setHigh(1, max(self.goal_point[1], start_point[1]) + CHUNK_DISTANCE / 2)
         self.se2space.setBounds(planbounds)
 
-        #self.ss.setPlanner(self.planner)
-        #solved = self.ss.solve(CHUNK_DURATION - 0.010)
-        #print("====>", round(self.state()[1][1]), "m/s,", round((time.time() - start) * 1000), "ms, ", end='')
-        #if solved:
-            #solution = self.ss.getSolutionPath()
-            #controls = solution.getControls()
-            #count = solution.getControlCount()
-            #if self.ss.haveExactSolutionPath():
-                #self.control = [controls[0][0], controls[0][1]]
-                #print("complete:", count, "segments, c1 =", round(self.control[1]))
-            #else:
-                #self.control = [controls[0][0], controls[0][1]]
-                #print("incomplete:", count, "segments, c1 =", round(self.control[1]))
-        #else:
-            #print("not solved")
+        self.ss.setPlanner(self.planner)
+        solved = self.ss.solve(CHUNK_DURATION - 0.010)
+        print("====>", round(self.state()[1][1]), "m/s,", round((time.time() - start) * 1000), "ms, ", end='')
+        if solved:
+            solution = self.ss.getSolutionPath()
+            controls = solution.getControls()
+            count = solution.getControlCount()
+            if self.ss.haveExactSolutionPath():
+                self.control = [controls[0][0], controls[0][1]]
+                print("complete:", count, "segments, c1 =", round(self.control[1]))
+            else:
+                self.control = [controls[0][0], controls[0][1]]
+                print("incomplete:", count, "segments, c1 =", round(self.control[1]))
+        else:
+            print("not solved")
 
-        np_state = np.array([future_state()[0].getX(), future_state()[0].getY(), future_state()[0].getYaw()])
-        target = util.tangent_bug(
-            np_state,
-            self.latched_map,
-            GRIDMAP_XY_SUBDIV,
-            self.goal_point,
-            HEURISTIC_DIRECTION_STEP,
-            HEURISTIC_CONT_THRESH,
-        )
-        print(target)
-        front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100)
+        #np_state = np.array([future_state()[0].getX(), future_state()[0].getY(), future_state()[0].getYaw()])
+        #target = util.tangent_bug(
+            #np_state,
+            #self.latched_map,
+            #GRIDMAP_XY_SUBDIV,
+            #self.goal_point,
+            #HEURISTIC_DIRECTION_STEP,
+            #HEURISTIC_CONT_THRESH,
+        #)
+        #print(target)
+        #front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100)
 
-        c0 = np.random.normal(np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0]), 0)
-        c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_UPPER[1], CONTROL_UPPER[1]), 0)
-        self.control = [0, 0]
-        self.control[0] = np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
-        self.control[1] = 10#np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
+        #c0 = np.random.normal(np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0]), 0)
+        #c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_UPPER[1], CONTROL_UPPER[1]), 0)
+        #self.control = [0, 0]
+        #self.control[0] = np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
+        #self.control[1] = 10#np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
 
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])

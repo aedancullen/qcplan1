@@ -318,10 +318,8 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, direction_step, c
 
         if l_tot < r_tot:
             target = l_target
-            print("l")
         else:
             target = r_target
-            print("r")
 
     target_aim = target - np_state[2]
     if target_aim < -np.pi:
