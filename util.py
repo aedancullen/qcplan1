@@ -252,104 +252,82 @@ def pid(speed, steer, current_speed, current_steer, max_sv, max_a, max_v, min_v)
     return accl, sv
 
 @njit(cache=True)
-def rangefind(np_state, latched_map, map_subdiv, direction, max_dist, width):
+def rangefind(np_state, latched_map, map_subdiv, direction, max_dist):
     step = 1 / map_subdiv / 2
     cos_step = np.cos(direction) * step
     sin_step = np.sin(direction) * step
-    cos_step_perp = np.cos(direction + np.pi / 2) * step
-    sin_step_perp = np.sin(direction + np.pi / 2) * step
     trans_x = np_state[0]
     trans_y = np_state[1]
     dist = 0
-    while dist < max_dist:
+    while dist <= max_dist:
+        x = discretize(latched_map.shape[0], map_subdiv, trans_x);
+        y = discretize(latched_map.shape[1], map_subdiv, trans_y);
+        if latched_map[x, y] >= 128:
+            return dist
         trans_x += cos_step
         trans_y += sin_step
         dist += step
-        trans_x_perp = 0
-        trans_y_perp = 0
-        dist_perp = 0
-        while dist_perp < width / 2:
-            trans_x_perp += cos_step_perp
-            trans_y_perp += sin_step_perp
-            dist_perp += step
-            x1 = discretize(latched_map.shape[0], map_subdiv, trans_x + trans_x_perp);
-            y1 = discretize(latched_map.shape[1], map_subdiv, trans_y + trans_y_perp);
-            x2 = discretize(latched_map.shape[0], map_subdiv, trans_x - trans_x_perp);
-            y2 = discretize(latched_map.shape[1], map_subdiv, trans_y - trans_y_perp);
-            if latched_map[x1, y1] >= 128 or latched_map[x2, y2] >= 128:
-                return dist
     return max_dist
 
 @njit(cache=True)
-def tangent_bug(np_state, latched_map, map_subdiv, goal_point, goal_angle, direction_step, cont_thresh, width):
+def tangent_bug(np_state, latched_map, map_subdiv, goal_point, direction_step, cont_thresh):
     goal_direction = np.arctan2(goal_point[1] - np_state[1], goal_point[0] - np_state[0])
     goal_dist = np.linalg.norm(goal_point - np_state[:2])
-    dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist, width)
+    dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist)
     target = goal_direction
     if dist < goal_dist:
+
+        l_direction = goal_direction
         l_last = dist
-        r_last = dist
-        sweep_direction_l = goal_direction
-        sweep_direction_r = goal_direction
         for i in range(round((np.pi / 2) / direction_step)):
-            sweep_direction_l += direction_step
-            sweep_direction_r -= direction_step
-            l_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_l, goal_dist * 2, width)
-            r_new = rangefind(np_state, latched_map, map_subdiv, sweep_direction_r, goal_dist * 2, width)
+            l_new = rangefind(np_state, latched_map, map_subdiv, l_direction, goal_dist * 2)
             if l_new - l_last > cont_thresh: # went farther
-                target = sweep_direction_l
+                l_target = l_direction
+                l_dist = l_last
                 break
-            if l_last - l_new > cont_thresh: # came nearer; backtrack
-                target = sweep_direction_l - direction_step
+            elif l_last - l_new > cont_thresh: # came nearer; backtrack
+                l_target = l_direction - direction_step
+                l_dist = l_new
                 break
+            else:
+                l_target = l_direction
+                l_dist = l_new
+                l_direction += direction_step
+                l_last = l_new
+
+        r_direction = goal_direction
+        r_last = dist
+        for i in range(round((np.pi / 2) / direction_step)):
+            r_new = rangefind(np_state, latched_map, map_subdiv, r_direction, goal_dist * 2)
             if r_new - r_last > cont_thresh: # went farther
-                target = sweep_direction_r
+                r_target = r_direction
+                r_dist = r_last
                 break
-            if r_last - r_new > cont_thresh: # came nearer; backtrack
-                target = sweep_direction_r + direction_step
+            elif r_last - r_new > cont_thresh: # came nearer; backtrack
+                r_target = r_direction + direction_step
+                r_dist = r_new
                 break
-            l_last = l_new
-            r_last = r_new
-        #if i == round((np.pi / 2) / direction_step) - 1:
-            #print("oof")
+            else:
+                r_target = r_direction
+                r_dist = r_new
+                r_direction -= direction_step
+                r_last = r_new
+
+        l_tot = l_dist + np.linalg.norm(goal_point - (np_state[:2] + np.array([np.cos(l_target) * l_dist, np.sin(l_target) * l_dist])))
+        r_tot = r_dist + np.linalg.norm(goal_point - (np_state[:2] + np.array([np.cos(r_target) * r_dist, np.sin(r_target) * r_dist])))
+
+        if l_tot < r_tot:
+            target = l_target
+            print("l")
+        else:
+            target = r_target
+            print("r")
 
     target_aim = target - np_state[2]
     if target_aim < -np.pi:
         target_aim += 2*np.pi
     elif target_aim >= np.pi:
         target_aim -= 2*np.pi
-
-    goal_direction_aim = goal_direction - np_state[2]
-    if goal_direction_aim < -np.pi:
-        goal_direction_aim += 2*np.pi
-    elif goal_direction_aim >= np.pi:
-        goal_direction_aim -= 2*np.pi
-
-    return target_aim, goal_direction_aim
-
-@njit(cache=True)
-def farthest_target(np_state, latched_map, map_subdiv, goal_point, goal_angle, direction_step, width):
-    goal_direction = np.arctan2(goal_point[1] - np_state[1], goal_point[0] - np_state[0])
-    goal_dist = np.linalg.norm(goal_point - np_state[:2])
-    dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist, width)
-    if dist >= goal_dist:
-        target_aim = goal_direction - np_state[2]
-        if target_aim < -np.pi:
-            target_aim += 2*np.pi
-        elif target_aim >= np.pi:
-            target_aim -= 2*np.pi
-        return target_aim
-
-    sweep_direction = -np.pi / 2
-    target_aim = sweep_direction
-    target_dist = 0
-    for i in range(round(np.pi / direction_step)):
-        sweep_direction += direction_step
-        dist = rangefind(np_state, latched_map, map_subdiv, np_state[2] + sweep_direction, 100, width)
-        if dist > target_dist:
-            target_dist = dist
-            target_aim = sweep_direction
-
     return target_aim
 
 @njit(cache=True)
@@ -363,23 +341,23 @@ def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
     trans_x = np_state[0] - np.cos(direction) * length / 2
     trans_y = np_state[1] - np.sin(direction) * length / 2
     dist = 0
-    while dist < length:
-        trans_x += cos_step
-        trans_y += sin_step
-        dist += step
+    while dist <= length:
         trans_x_perp = 0
         trans_y_perp = 0
         dist_perp = 0
-        while dist_perp < width / 2:
-            trans_x_perp += cos_step_perp
-            trans_y_perp += sin_step_perp
-            dist_perp += step
+        while dist_perp <= width / 2:
             x1 = discretize(latched_map.shape[0], map_subdiv, trans_x + trans_x_perp);
             y1 = discretize(latched_map.shape[1], map_subdiv, trans_y + trans_y_perp);
             x2 = discretize(latched_map.shape[0], map_subdiv, trans_x - trans_x_perp);
             y2 = discretize(latched_map.shape[1], map_subdiv, trans_y - trans_y_perp);
             if latched_map[x1, y1] >= 128 or latched_map[x2, y2] >= 128:
                 return False
+            trans_x_perp += cos_step_perp
+            trans_y_perp += sin_step_perp
+            dist_perp += step
+        trans_x += cos_step
+        trans_y += sin_step
+        dist += step
     return True
 
 @njit(cache=True)
