@@ -270,7 +270,7 @@ def rangefind(np_state, latched_map, map_subdiv, direction, max_dist):
     return max_dist
 
 @njit(cache=True)
-def tangent_bug(np_state, latched_map, map_subdiv, goal_point, direction_step, cont_thresh):
+def tangent_bug(np_state, latched_map, map_subdiv, goal_point, direction_step, cont_thresh, width):
     goal_direction = np.arctan2(goal_point[1] - np_state[1], goal_point[0] - np_state[0])
     goal_dist = np.linalg.norm(goal_point - np_state[:2])
     dist = rangefind(np_state, latched_map, map_subdiv, goal_direction, goal_dist)
@@ -282,16 +282,16 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, direction_step, c
         for i in range(round((np.pi / 2) / direction_step)):
             l_new = rangefind(np_state, latched_map, map_subdiv, l_direction, goal_dist * 2)
             if l_new - l_last > cont_thresh: # went farther
-                l_target = l_direction
                 l_dist = l_last
+                l_target = l_direction + np.arctan(width / 2 / l_dist)
                 break
             elif l_last - l_new > cont_thresh: # came nearer; backtrack
-                l_target = l_direction - direction_step
                 l_dist = l_new
+                l_target = l_direction - direction_step - np.arctan(width / 2 / l_dist)
                 break
             else:
-                l_target = l_direction
                 l_dist = l_new
+                l_target = l_direction
                 l_direction += direction_step
                 l_last = l_new
 
@@ -300,16 +300,16 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, direction_step, c
         for i in range(round((np.pi / 2) / direction_step)):
             r_new = rangefind(np_state, latched_map, map_subdiv, r_direction, goal_dist * 2)
             if r_new - r_last > cont_thresh: # went farther
-                r_target = r_direction
                 r_dist = r_last
+                r_target = r_direction - np.arctan(width / 2 / r_dist)
                 break
             elif r_last - r_new > cont_thresh: # came nearer; backtrack
-                r_target = r_direction + direction_step
                 r_dist = r_new
+                r_target = r_direction + direction_step + np.arctan(width / 2 / r_dist)
                 break
             else:
-                r_target = r_direction
                 r_dist = r_new
+                r_target = r_direction
                 r_direction -= direction_step
                 r_last = r_new
 
