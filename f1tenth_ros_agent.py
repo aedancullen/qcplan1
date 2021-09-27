@@ -3,6 +3,8 @@ import os
 import sys
 import time
 
+from threading import Thread
+
 import rospy
 from f1tenth_gym_ros.msg import RaceInfo
 from ackermann_msgs.msg import AckermannDriveStamped
@@ -21,9 +23,8 @@ ou.setLogLevel(ou.LOG_ERROR)
 
 PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.5, 'length': 0.8}#'width': 0.31, 'length': 0.58}#
 
-NUM_CONTROLS = 2
-CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
-CONTROL_UPPER = [PARAMS["s_max"], PARAMS["v_max"]]
+CONTROL_LOWER = (PARAMS["s_min"], PARAMS["v_min"])
+CONTROL_UPPER = (PARAMS["s_max"], PARAMS["v_max"])
 
 GRIDMAP_XY_SUBDIV = 1/0.08534
 
@@ -38,10 +39,9 @@ GOAL_THRESHOLD = 2
 
 HEURISTIC_DIRECTION_STEP = np.radians(0.1)
 HEURISTIC_CONT_THRESH = 1
-STEER_GAIN = 0.2
-STEER_STDEV = 0.2
-VEL_GAIN = 1.5
-VEL_STDEV = 10
+
+CONTROL_GAIN = (0.2, 2)
+CONTROL_STDEV = (0.2, 5)
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
@@ -51,24 +51,55 @@ class QCPassControlSampler(oc.ControlSampler):
         self.goal_angle = goal_angle
 
     def sample(self, control, state, selections):
-        np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
+        np_state = np.array([
+            state[0].getX(),
+            state[0].getY(),
+            state[1][0],
+            state[1][1],
+            state[0].getYaw(),
+            state[1][2],
+            state[1][3],
+        ])
 
-        target = util.tangent_bug(
+        steer0 = state[1][4]
+        steer = state[1][5]
+
+        np_control = util.fast_control_sample(
             np_state,
+            steer0,
+            steer,
             self.latched_map,
             GRIDMAP_XY_SUBDIV,
             self.goal_point,
             HEURISTIC_DIRECTION_STEP,
             HEURISTIC_CONT_THRESH,
+            CHUNK_MULTIPLIER,
+            CONTROL_LOWER,
+            CONTROL_UPPER,
+            CONTROL_GAIN,
+            CONTROL_STDEV,
+            PHYSICS_TIMESTEP,
+            PARAMS["mu"],
+            PARAMS["C_Sf"],
+            PARAMS["C_Sr"],
+            PARAMS["lf"],
+            PARAMS["lr"],
+            PARAMS["h"],
+            PARAMS["m"],
+            PARAMS["I"],
+            PARAMS["s_min"],
+            PARAMS["s_max"],
+            PARAMS["sv_min"],
+            PARAMS["sv_max"],
+            PARAMS["v_switch"],
+            PARAMS["a_max"],
+            PARAMS["v_min"],
+            PARAMS["v_max"],
             PARAMS["width"],
         )
 
-        front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100)
-
-        c0 = np.random.normal(target * STEER_GAIN, STEER_STDEV)
-        c1 = np.random.normal(np.clip(15, CONTROL_LOWER[1], CONTROL_UPPER[1]), VEL_STDEV)
-        control[0] = c0#np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
-        control[1] = np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
+        for i in range(len(np_control)):
+            control[i] = np_control[i]
 
 class QCPlan1:
     def __init__(self, hardware_map, waypoints_fn, gridmap_fn):
@@ -96,7 +127,7 @@ class QCPlan1:
         self.statespace.addSubspace(self.se2space, 1) # weight 1
         self.statespace.addSubspace(self.vectorspace, 0) # weight 0
 
-        self.controlspace = oc.RealVectorControlSpace(self.statespace, 2)
+        self.controlspace = oc.RealVectorControlSpace(self.statespace, CHUNK_MULTIPLIER * 2)
         self.controlspace.setControlSamplerAllocator(oc.ControlSamplerAllocator(self.csampler_alloc))
 
         self.ss = oc.SimpleSetup(self.controlspace)
@@ -109,13 +140,13 @@ class QCPlan1:
 
         #========
 
-        self.last_control = [0, 0]
-        self.control = None
+        self.last_control = np.zeros(CHUNK_MULTIPLIER * 2)
+        self.control = np.zeros(CHUNK_MULTIPLIER * 2)
 
         print("====>", "Waiting for hardware map")
         while not self.hardware_map.ready():
             rospy.sleep(0.001)
-        
+
         self.state = ob.State(self.statespace)
         state = self.state()
         #if True:
@@ -139,11 +170,20 @@ class QCPlan1:
         self.se2space.setBounds(self.se2bounds)
         self.statespace.enforceBounds(self.state())
 
+    def push(self, control):
+        for i in range(CHUNK_MULTIPLIER):
+            self.hardware_map.drive(
+                control[i * 2 + 0],
+                control[i * 2 + 1],
+            )
+            print(control[1])
+            rospy.sleep(SIM_INTERVAL)
+
     def loop(self, timer):
         start = time.time()
-
-        if self.control is not None:
-            self.hardware_map.drive(self.control[0], self.control[1])
+        
+        push_thread = Thread(target=self.push, args=(np.copy(self.control),))
+        push_thread.start()
 
         obs_captured = self.hardware_map.observations
 
@@ -164,7 +204,15 @@ class QCPlan1:
         self.statespace.enforceBounds(self.state())
 
         # Latch map
-        np_state = np.array([self.state()[0].getX(), self.state()[0].getY(), self.state()[0].getYaw()])
+        np_state = np.array([
+            self.state()[0].getX(),
+            self.state()[0].getY(),
+            self.state()[1][0],
+            self.state()[1][1],
+            self.state()[0].getYaw(),
+            self.state()[1][2],
+            self.state()[1][3],
+        ])
         self.latched_map = self.gridmap.copy()
         util.combine_scan(
             np_state,
@@ -175,13 +223,10 @@ class QCPlan1:
             self.hardware_map.angle_inc,
         )
 
-        # Predict future state if controls were issued
+        # Predict future state
         future_state = ob.State(self.statespace)
-        if self.control is not None:
-            self.state_propagate(self.state(), self.control, CHUNK_MULTIPLIER, future_state())
-            self.last_control = self.control
-        else:
-            self.statespace.copyState(future_state(), self.state())
+        self.state_propagate(self.state(), self.control, CHUNK_MULTIPLIER, future_state())
+        self.last_control = self.control
 
         # Plan from future state
         self.planner = oc.SST(self.si)
@@ -218,10 +263,12 @@ class QCPlan1:
             controls = solution.getControls()
             count = solution.getControlCount()
             if self.ss.haveExactSolutionPath():
-                self.control = [controls[0][0], controls[0][1]]
+                for i in range(len(self.control)):
+                    self.control[i] = controls[0][i]
                 print("complete:", count, "segments, c1 =", round(self.control[1]))
             else:
-                self.control = [controls[0][0], controls[0][1]]
+                for i in range(len(self.control)):
+                    self.control[i] = controls[0][i]
                 print("incomplete:", count, "segments, c1 =", round(self.control[1]))
         else:
             print("not solved")
@@ -234,7 +281,6 @@ class QCPlan1:
             #self.goal_point,
             #HEURISTIC_DIRECTION_STEP,
             #HEURISTIC_CONT_THRESH,
-            #PARAMS["width"],
         #)
         #print(target)
         #front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100)
@@ -243,10 +289,19 @@ class QCPlan1:
         #c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_UPPER[1], CONTROL_UPPER[1]), 0)
         #self.control = [0, 0]
         #self.control[0] = np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
-        #self.control[1] = 5#np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
+        #self.control[1] = 10#np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
 
     def state_validity_check(self, state):
-        np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
+        np_state = np.array([
+            state[0].getX(),
+            state[0].getY(),
+            state[1][0],
+            state[1][1],
+            state[0].getYaw(),
+            state[1][2],
+            state[1][3],
+        ])
+
         return util.fast_state_validity_check(
             np_state,
             self.latched_map,
@@ -269,13 +324,15 @@ class QCPlan1:
         steer0 = start[1][4]
         steer = start[1][5]
 
-        control = np.array([control[0], control[1]])
+        np_control = np.zeros(CHUNK_MULTIPLIER * 2)
+        for i in range(len(np_control)):
+            np_control[i] = control[i]
 
         np_state, steer0, steer = util.fast_state_propagate(
             np_state,
             steer0,
             steer,
-            control,
+            np_control,
             duration,
             PHYSICS_TIMESTEP,
             PARAMS["mu"],

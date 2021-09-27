@@ -2,6 +2,15 @@ import numpy as np
 from numba import njit
 
 @njit(cache=True)
+def clip(a, low, high):
+    if a < low:
+        return low
+    elif a > high:
+        return high
+    else:
+        return a
+
+@njit(cache=True)
 def nearest_point_on_trajectory(point, trajectory):
     '''
     Return the nearest point along the given piecewise linear trajectory.
@@ -321,7 +330,7 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, direction_step, c
         else:
             target = r_target
 
-    target_aim = target - np_state[2]
+    target_aim = target - np_state[4]
     if target_aim < -np.pi:
         target_aim += 2*np.pi
     elif target_aim >= np.pi:
@@ -329,8 +338,80 @@ def tangent_bug(np_state, latched_map, map_subdiv, goal_point, direction_step, c
     return target_aim
 
 @njit(cache=True)
+def fast_control_sample(np_state, steer0, steer, latched_map, map_subdiv, goal_point, direction_step, cont_thresh, chunk_multiplier,
+                        control_lower,
+                        control_upper,
+                        control_gain,
+                        control_stdev,
+                        physics_timestep,
+                        mu,
+                        C_Sf,
+                        C_Sr,
+                        lf,
+                        lr,
+                        h,
+                        m,
+                        I,
+                        s_min,
+                        s_max,
+                        sv_min,
+                        sv_max,
+                        v_switch,
+                        a_max,
+                        v_min,
+                        v_max,
+                        width):
+
+    control = np.zeros(chunk_multiplier * 2)
+
+    for i in range(chunk_multiplier):
+        target = tangent_bug(
+            np_state,
+            latched_map,
+            map_subdiv,
+            goal_point,
+            direction_step,
+            cont_thresh,
+            width,
+        )
+
+        front_dist = rangefind(np_state, latched_map, map_subdiv, np_state[4], 100)
+
+        c0 = np.random.normal(clip(target * control_gain[0], control_lower[0], control_upper[0]), control_stdev[0])
+        c1 = np.random.normal(clip(front_dist * control_gain[1], control_lower[1], control_upper[1]), control_stdev[1])
+        control[i * 2 + 0] = clip(c0, control_lower[0], control_upper[0])
+        control[i * 2 + 1] = clip(c1, control_lower[1], control_upper[1])
+
+        np_state, steer0, steer = fast_state_propagate(
+            np_state,
+            steer0,
+            steer,
+            control[i * 2:],
+            1,
+            physics_timestep,
+            mu,
+            C_Sf,
+            C_Sr,
+            lf,
+            lr,
+            h,
+            m,
+            I,
+            s_min,
+            s_max,
+            sv_min,
+            sv_max,
+            v_switch,
+            a_max,
+            v_min,
+            v_max,
+        )
+
+    return control
+
+@njit(cache=True)
 def fast_state_validity_check(np_state, latched_map, map_subdiv, length, width):
-    direction = np_state[2]
+    direction = np_state[4]
     step = 1 / map_subdiv / 2
     cos_step = np.cos(direction) * step
     sin_step = np.sin(direction) * step
@@ -377,9 +458,9 @@ def fast_state_propagate(np_state, steer0, steer, control, duration, physics_tim
                          v_min,
                          v_max):
 
-    vel = control[1]
-
     for i in range(int(duration)):
+        vel = control[i * 2 + 1]
+
         # bound yaw angle
         if np_state[4] > 2*np.pi:
             np_state[4] -= 2*np.pi
@@ -414,7 +495,7 @@ def fast_state_propagate(np_state, steer0, steer, control, duration, physics_tim
         np_state = np_state + f * physics_timestep
 
         steer = steer0
-        steer0 = control[0]
+        steer0 = control[i * 2 + 0]
 
     if np_state[4] < -np.pi:
         np_state[4] += 2*np.pi
@@ -427,7 +508,7 @@ def fast_state_propagate(np_state, steer0, steer, control, duration, physics_tim
 def combine_scan(np_state, latched_map, map_subdiv, ranges, angle_min, angle_increment):
     for i in range(len(ranges)):
         dist = ranges[i]
-        angle = np_state[2] + angle_min + i * angle_increment
+        angle = np_state[4] + angle_min + i * angle_increment
         location_x = np_state[0] + dist * np.cos(angle)
         location_y = np_state[1] + dist * np.sin(angle)
         bi_x = discretize(latched_map.shape[0], map_subdiv, location_x)
