@@ -19,7 +19,7 @@ import util
 
 ou.setLogLevel(ou.LOG_ERROR)
 
-PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.5, 'length': 0.8}#'width': 0.31, 'length': 0.58}#
+PARAMS = {'mu': 1.0489, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr': 0.17145, 'h': 0.074, 'm': 3.74, 'I': 0.04712, 's_min': -0.4189, 's_max': 0.4189, 'sv_min': -3.2, 'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min':-5.0, 'v_max': 20.0, 'width': 0.31, 'length': 0.58}#'width': 0.5, 'length': 0.8}#
 
 NUM_CONTROLS = 2
 CONTROL_LOWER = [PARAMS["s_min"], PARAMS["v_min"]]
@@ -38,9 +38,9 @@ GOAL_THRESHOLD = 2
 
 HEURISTIC_DIRECTION_STEP = np.radians(0.1)
 HEURISTIC_CONT_THRESH = 1
-STEER_GAIN = 0.2
-STEER_STDEV = 0.2
-VEL_GAIN = 1.5
+STEER_GAIN = 0.3
+STEER_STDEV = 0.1
+VEL_GAIN = 2
 VEL_STDEV = 10
 
 class QCPassControlSampler(oc.ControlSampler):
@@ -62,12 +62,16 @@ class QCPassControlSampler(oc.ControlSampler):
             HEURISTIC_CONT_THRESH,
             PARAMS["width"],
         )
-
         front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100)
 
-        c0 = np.random.normal(target * STEER_GAIN, STEER_STDEV)
-        c1 = np.random.normal(np.clip(15, CONTROL_LOWER[1], CONTROL_UPPER[1]), VEL_STDEV)
-        control[0] = c0#np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
+        if selections == 0:
+            c0 = np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0])
+            c1 = np.clip(front_dist * VEL_GAIN, CONTROL_LOWER[1], CONTROL_UPPER[1])
+        else:
+            c0 = np.random.normal(np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0]), STEER_STDEV)
+            c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_LOWER[1], CONTROL_UPPER[1]), VEL_STDEV)
+
+        control[0] = np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
         control[1] = np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
 
 class QCPlan1:
@@ -104,8 +108,8 @@ class QCPlan1:
         self.ss.setStatePropagator(oc.StatePropagatorFn(self.state_propagate))
 
         self.si = self.ss.getSpaceInformation()
-        self.si.setPropagationStepSize(CHUNK_MULTIPLIER)
-        self.si.setMinMaxControlDuration(1, 1)
+        self.si.setPropagationStepSize(1)
+        self.si.setMinMaxControlDuration(CHUNK_MULTIPLIER, CHUNK_MULTIPLIER)
 
         #========
 
@@ -115,21 +119,9 @@ class QCPlan1:
         print("====>", "Waiting for hardware map")
         while not self.hardware_map.ready():
             rospy.sleep(0.001)
-        
+
         self.state = ob.State(self.statespace)
         state = self.state()
-        #if True:
-            #print("====>", "Identity is ego")
-            #state[0].setX(0.8007017)
-            #state[0].setY(-0.2753365)
-            #state[0].setYaw(4.1421595)
-
-        #elif False:
-            #print("====>", "Identity is opp")
-            #state[0].setX(0.8162458)
-            #state[0].setY(1.1614572)
-            #state[0].setYaw(4.1446321)
-
         state[1][0] = 0
         state[1][1] = 0
         state[1][2] = 0
@@ -225,25 +217,6 @@ class QCPlan1:
                 print("incomplete:", count, "segments, c1 =", round(self.control[1]))
         else:
             print("not solved")
-
-        #np_state = np.array([future_state()[0].getX(), future_state()[0].getY(), future_state()[0].getYaw()])
-        #target = util.tangent_bug(
-            #np_state,
-            #self.latched_map,
-            #GRIDMAP_XY_SUBDIV,
-            #self.goal_point,
-            #HEURISTIC_DIRECTION_STEP,
-            #HEURISTIC_CONT_THRESH,
-            #PARAMS["width"],
-        #)
-        #print(target)
-        #front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100)
-
-        #c0 = np.random.normal(np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0]), 0)
-        #c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_UPPER[1], CONTROL_UPPER[1]), 0)
-        #self.control = [0, 0]
-        #self.control[0] = np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
-        #self.control[1] = 5#np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
 
     def state_validity_check(self, state):
         np_state = np.array([state[0].getX(), state[0].getY(), state[0].getYaw()])
