@@ -33,10 +33,10 @@ SIM_INTERVAL = 0.02 # Real time interval of simulator's internal physics callbac
 CHUNK_MULTIPLIER = 5
 
 CHUNK_DURATION = SIM_INTERVAL * CHUNK_MULTIPLIER
-CHUNK_DISTANCE = 5
+CHUNK_DISTANCE = 7
 GOAL_THRESHOLD = 2
 
-HEURISTIC_DIRECTION_STEP = np.radians(0.1)
+HEURISTIC_DIRECTION_STEP = np.radians(1)
 HEURISTIC_CONT_THRESH = 1
 STEER_GAIN = 0.2
 STEER_STDEV = 0.2
@@ -66,7 +66,7 @@ class QCPassControlSampler(oc.ControlSampler):
         front_dist = util.rangefind(np_state, self.latched_map, GRIDMAP_XY_SUBDIV, np_state[2], 100)
 
         c0 = np.random.normal(target * STEER_GAIN, STEER_STDEV)
-        c1 = np.random.normal(np.clip(20, CONTROL_LOWER[1], CONTROL_UPPER[1]), VEL_STDEV)
+        c1 = np.random.normal(np.clip(15, CONTROL_LOWER[1], CONTROL_UPPER[1]), VEL_STDEV)
         control[0] = c0#np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
         control[1] = np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
 
