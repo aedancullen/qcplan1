@@ -40,8 +40,8 @@ HEURISTIC_DIRECTION_STEP = np.radians(0.1)
 HEURISTIC_CONT_THRESH = 1
 STEER_GAIN = 0.3
 STEER_STDEV = 0.1
-VEL_GAIN = 2
-VEL_STDEV = 10
+VEL_GAIN = 1.5
+VEL_STDEV = 5
 
 class QCPassControlSampler(oc.ControlSampler):
     def __init__(self, controlspace, latched_map, goal_point, goal_angle):
@@ -66,10 +66,10 @@ class QCPassControlSampler(oc.ControlSampler):
 
         if selections == 0:
             c0 = np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0])
-            c1 = np.clip(front_dist * VEL_GAIN, CONTROL_LOWER[1], CONTROL_UPPER[1])
+            c1 = np.clip(front_dist * VEL_GAIN, CONTROL_UPPER[1] / 2, CONTROL_UPPER[1])
         else:
             c0 = np.random.normal(np.clip(target * STEER_GAIN, CONTROL_LOWER[0], CONTROL_UPPER[0]), STEER_STDEV)
-            c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_LOWER[1], CONTROL_UPPER[1]), VEL_STDEV)
+            c1 = np.random.normal(np.clip(front_dist * VEL_GAIN, CONTROL_UPPER[1] / 2, CONTROL_UPPER[1]), VEL_STDEV)
 
         control[0] = np.clip(c0, CONTROL_LOWER[0], CONTROL_UPPER[0])
         control[1] = np.clip(c1, CONTROL_LOWER[1], CONTROL_UPPER[1])
