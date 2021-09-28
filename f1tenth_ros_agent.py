@@ -40,7 +40,7 @@ HEURISTIC_DIRECTION_STEP = np.radians(0.1)
 HEURISTIC_CONT_THRESH = 1
 STEER_GAIN = 0.3
 STEER_STDEV = 0.3
-VEL_GAIN = 1.5
+VEL_GAIN = 1.25
 VEL_STDEV = 5
 
 class QCPassControlSampler(oc.ControlSampler):
